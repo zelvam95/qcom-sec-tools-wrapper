@@ -239,6 +239,5 @@ log "Cleaning up"
 
 rm ${OUT_DIR}/randfile
 rm ${OUT_DIR}/*.csr
-rm ${OUT_DIR}/*.crt
 
 log "> Done"
