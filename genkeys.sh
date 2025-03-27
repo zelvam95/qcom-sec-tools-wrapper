@@ -209,8 +209,9 @@ else
         -subj /C=US/ST=CA/L="San Diego"/OU="CDMA Technologies"/O=QUALCOMM/CN="QUALCOMM Attestation CA" -config opensslroot.cfg
 
     if [ "${USE_OPENSSL1}" -eq 1 ]; then
+        # Dropped: "–sha256" from original command
         openssl x509 -req -in ${OUT_DIR}/attestca.csr -CA ${OUT_DIR}/rootca_pem.crt -CAkey ${OUT_DIR}/qpsa_rootca.key \
-            -out ${OUT_DIR}/attestca_pem.crt -set_serial 5 -days 7300 -extfile v3.ext –sha384 -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha384
+            -out ${OUT_DIR}/attestca_pem.crt -set_serial 5 -days 7300 -extfile v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha256
     else
         # Dropped: "–sha256" and "- sigopt digest:sha256" from original command
         openssl x509 -req -in ${OUT_DIR}/attestca.csr -CA ${OUT_DIR}/rootca_pem.crt -CAkey ${OUT_DIR}/qpsa_rootca.key \
