@@ -4,7 +4,8 @@
 OUT_DIR="OEM-KEYS"
 KEY_SIZE=2048
 VALID_KEY_SIZES="2048 4096"
-MIN_OPENSSL_VER="3.0.0"
+MIN_OPENSSL_VER="1.1.1"
+USE_OPENSSL1=0
 
 # Flags
 DEBUG=0
@@ -95,10 +96,14 @@ log "Check for openssl"
 command -v openssl >/dev/null 2>&1 || { echo >&2 "Missing openssl command.  Aborting."; exit 1; }
 log "> openssl found."
 
-log "Check openssl version >= ${MIN_OPENSSL_VER}"
 OPENSSL_VERSION=$(openssl version | cut -d' ' -f2)
+log "Check openssl version (${OPENSSL_VERSION}) >= ${MIN_OPENSSL_VER}"
 version_greater_equal "${OPENSSL_VERSION}" ${MIN_OPENSSL_VER} || { echo >&2 "Need at least openssl ${MIN_OPENSSL_VER}.  Aborting."; exit 1; }
 log "> openssl version == ${OPENSSL_VERSION}"
+if [ "$(echo ${OPENSSL_VERSION} | cut -c1)" -eq 1 ]; then
+    USE_OPENSSL1=1
+    echo "> Using OpenSSL 1.x commands"
+fi
 
 log "Check for ${OUT_DIR} directory"
 if [ ! -d "${OUT_DIR}" ]; then
@@ -174,11 +179,18 @@ else
     openssl genrsa -out ${OUT_DIR}/qpsa_rootca.key ${KEY_SIZE}
     log "> Created RSA root CA key"
 
-    # Dropped "-sigopt digest:sha256" from the original command
-    # Updated -sha256 to -sha384
-    openssl req -new -sha384 -key ${OUT_DIR}/qpsa_rootca.key -x509 -out ${OUT_DIR}/rootca_pem.crt \
-        -subj /C=US/ST=California/L="San Diego"/OU="General Use Test Key (for testing 13 only)"/OU="CDMA Technologies"/O=QUALCOMM/CN="QCT Root CA 1" \
-        -days 7300 -set_serial 1 -config opensslroot.cfg -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1
+    if [ "${USE_OPENSSL1}" -eq 1 ]; then
+        # Updated -sha256 to -sha384
+        openssl req -new -sha384 -key ${OUT_DIR}/qpsa_rootca.key -x509 -out ${OUT_DIR}/rootca_pem.crt \
+            -subj /C=US/ST=California/L="San Diego"/OU="General Use Test Key (for testing 13 only)"/OU="CDMA Technologies"/O=QUALCOMM/CN="QCT Root CA 1" \
+            -days 7300 -set_serial 1 -config opensslroot.cfg -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha384
+    else
+        # Dropped "-sigopt digest:sha256" from the original command
+        # Updated -sha256 to -sha384
+        openssl req -new -sha384 -key ${OUT_DIR}/qpsa_rootca.key -x509 -out ${OUT_DIR}/rootca_pem.crt \
+            -subj /C=US/ST=California/L="San Diego"/OU="General Use Test Key (for testing 13 only)"/OU="CDMA Technologies"/O=QUALCOMM/CN="QCT Root CA 1" \
+            -days 7300 -set_serial 1 -config opensslroot.cfg -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1
+    fi
 
     openssl x509 -in ${OUT_DIR}/rootca_pem.crt -inform PEM -out ${OUT_DIR}/qpsa_rootca.cer -outform DER
     log "> Created RSA root CA certificate"
@@ -196,9 +208,14 @@ else
     openssl req -new -key ${OUT_DIR}/qpsa_attestca.key -out ${OUT_DIR}/attestca.csr \
         -subj /C=US/ST=CA/L="San Diego"/OU="CDMA Technologies"/O=QUALCOMM/CN="QUALCOMM Attestation CA" -config opensslroot.cfg
 
-    # Dropped: "–sha256" and "- sigopt digest:sha256" from original command
-    openssl x509 -req -in ${OUT_DIR}/attestca.csr -CA ${OUT_DIR}/rootca_pem.crt -CAkey ${OUT_DIR}/qpsa_rootca.key \
-        -out ${OUT_DIR}/attestca_pem.crt -set_serial 5 -days 7300 -extfile v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1
+    if [ "${USE_OPENSSL1}" -eq 1 ]; then
+        openssl x509 -req -in ${OUT_DIR}/attestca.csr -CA ${OUT_DIR}/rootca_pem.crt -CAkey ${OUT_DIR}/qpsa_rootca.key \
+            -out ${OUT_DIR}/attestca_pem.crt -set_serial 5 -days 7300 -extfile v3.ext –sha384 -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha384
+    else
+        # Dropped: "–sha256" and "- sigopt digest:sha256" from original command
+        openssl x509 -req -in ${OUT_DIR}/attestca.csr -CA ${OUT_DIR}/rootca_pem.crt -CAkey ${OUT_DIR}/qpsa_rootca.key \
+            -out ${OUT_DIR}/attestca_pem.crt -set_serial 5 -days 7300 -extfile v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1
+    fi
 
     openssl x509 -inform PEM -in ${OUT_DIR}/attestca_pem.crt -outform DER -out ${OUT_DIR}/qpsa_attestca.cer
     log "> Created RSA Attestation CA certificate"
