@@ -1,3 +1,4 @@
+# docker build -t genkeys:latest .
 # docker run --rm -it -v $(pwd)/OEM-KEYS:/src/OEM-KEYS genkeys:latest
 
 # OpenSSL 3.3.3
