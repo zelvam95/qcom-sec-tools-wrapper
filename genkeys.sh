@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Break on errors
+set -e
+
 # Settings
 OUT_DIR="OEM-KEYS"
 KEY_SIZE=2048
