@@ -1,6 +1,9 @@
 # docker run --rm -it -v $(pwd)/OEM-KEYS:/src/OEM-KEYS genkeys:latest
 
-FROM alpine:3.21.3
+# OpenSSL 3.3.3
+# FROM alpine:3.21.3
+# OpenSSL 1.1.1w
+FROM alpine:3.16.9
 
 RUN apk add openssl coreutils
 
