@@ -1,0 +1,4 @@
+authorityKeyIdentifier=keyid,issuer
+subjectKeyIdentifier=hash
+basicConstraints=CA:true,pathlen:0
+keyUsage=keyCertSign
