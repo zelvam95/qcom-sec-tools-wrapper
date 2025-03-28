@@ -1,0 +1,356 @@
+#!/bin/sh
+
+# Break on errors
+set -e
+
+# Settings
+KEYS_PATH="OEM-KEYS"
+KEYS_ROOT_CERT="qpsa_rootca.cer"
+KEYS_CA_CERT="qpsa_attestca.cer"
+KEYS_CA_KEY="qpsa_attestca.key"
+IMAGE_DIR="."
+OUT_DIR="./signed_images"
+ANTI_ROLLBACK_VERSION=0x0
+SECTOOL=""
+SECURITY_PROFILE=""
+PACKAGE_FILENAME=""
+OEM_ID=""
+OEM_PRODUCT_ID=""
+
+# Flags
+DEBUG=0
+FORCE=0
+QUIET=0
+CREATE_SEC_ELF=0
+
+function parse_args()
+{
+    while [ $# -gt 0 ]
+    do
+        case $1 in
+        --anti-rollback-version)
+            if echo "$2" | grep -Eq '^0x?[0-9a-fA-F]+$'; then
+                ANTI_ROLLBACK_VERSION=$2
+                echo "FLAG: ANTI_ROLLBACK_VERSION: ${ANTI_ROLLBACK_VERSION}"
+            else
+                echo >&2 "ERROR: ANTI_ROLLBACK_VERSION is not a valid hex number: $2.  Aborting."
+                exit 1
+            fi
+            shift
+            shift
+            ;;
+        --create-sec-elf)
+            CREATE_SEC_ELF=1
+            echo "FLAG: Create sec.elf: enabled"
+            shift
+            ;;
+        --debug)
+            DEBUG=1
+            echo "FLAG: Debug: enabled"
+            shift
+            ;;
+        --force)
+            FORCE=1
+            echo "FLAG: Force overwrite: enabled"
+            shift
+            ;;
+        --keys-path)
+            KEYS_PATH=$2
+            echo "FLAG: KEYS_PATH: ${KEYS_PATH}"
+            shift
+            shift
+            ;;
+        --keys-root-cert)
+            KEYS_ROOT_CERT=$2
+            echo "FLAG: KEYS_ROOT_CERT: ${KEYS_ROOT_CERT}"
+            shift
+            shift
+            ;;
+        --keys-ca-cert)
+            KEYS_CA_CERT=$2
+            echo "FLAG: KEYS_CA_CERT: ${KEYS_CA_CERT}"
+            shift
+            shift
+            ;;
+        --keys-ca-key)
+            KEYS_CA_KEY=$2
+            echo "FLAG: KEYS_CA_KEY: ${KEYS_CA_KEY}"
+            shift
+            shift
+            ;;
+        --image-dir)
+            IMAGE_DIR=$2
+            echo "FLAG: IMAGE_DIR: ${IMAGE_DIR}"
+            shift
+            shift
+            ;;
+        --oem-id)
+            if echo "$2" | grep -Eq '^0x?[0-9a-fA-F]+$'; then
+                OEM_ID=$2
+                echo "FLAG: OEM_ID: ${OEM_ID}"
+            else
+                echo >&2 "ERROR: OEM_ID is not a valid hex number: $2.  Aborting."
+                exit 1
+            fi
+            shift
+            shift
+            ;;
+        --oem-product-id)
+            if echo "$2" | grep -Eq '^0x?[0-9a-fA-F]+$'; then
+                OEM_PRODUCT_ID=$2
+                echo "FLAG: OEM_PRODUCT_ID: ${OEM_PRODUCT_ID}"
+            else
+                echo >&2 "ERROR: OEM_PRODUCT_ID is not a valid hex number: $2.  Aborting."
+                exit 1
+            fi
+            shift
+            shift
+            ;;
+        --out-dir)
+            OUT_DIR=$2
+            echo "FLAG: OUT_DIR: ${OUT_DIR}"
+            shift
+            shift
+            ;;
+        --package-filename)
+            PACKAGE_FILENAME=$2
+            echo "FLAG: PACKAGE_FILENAME: ${PACKAGE_FILENAME}"
+            shift
+            shift
+            ;;
+        --quiet)
+            QUIET=1
+            echo "FLAG: Quiet mode"
+            shift
+            ;;
+        --sectoolv2)
+            SECTOOL=$2
+            echo "FLAG: SECTOOL: ${SECTOOL}"
+            shift
+            shift
+            ;;
+        --security-profile)
+            SECURITY_PROFILE=$2
+            echo "FLAG: SECURITY_PROFILE: ${SECURITY_PROFILE}"
+            shift
+            shift
+            ;;
+        *)
+            shift
+            ;;
+        esac
+    done
+}
+
+parse_args "$@"
+
+function debug_log()
+{
+    if [ "${DEBUG}" -eq 1 ]; then
+        echo "DEBUG: $1"
+    fi
+}
+
+function log()
+{
+    if [ "${QUIET}" -ne 1 ]; then
+        echo "$1"
+    fi
+}
+
+if [ ! -z "${PACKAGE_FILENAME}" ]; then
+    log "Check for zip command"
+    command -v zip >/dev/null 2>&1 || { echo >&2 "Missing zip command.  Aborting."; exit 1; }
+    log "> zip command found."
+
+    log "Check for existing zip package: ${PACKAGE_FILENAME}"
+    if [ -f "${PACKAGE_FILENAME}"  ]; then
+        if [ "${FORCE}" -eq 1 ]; then
+            log "> Force flag enabled: overwriting existing zip package!"
+        else
+            echo >&2 "ERROR: Existing zip package Found.  Aborting."
+            exit 1
+        fi
+    else
+        log "> No zip package found.  Proceeding."
+    fi
+fi
+
+[ -z "${SECTOOL}"  ] && { echo >&2 "ERROR: Missing --sectoolv2 parameter.  Aborting."; exit 1; }
+[ -z "${SECURITY_PROFILE}"  ] && { echo >&2 "ERROR: Missing --security-profile parameter.  Aborting."; exit 1; }
+[ ! -f "${SECURITY_PROFILE}"  ] && { echo >&2 "ERROR: File for security-profile could not be found: ${SECURITY_PROFILE}  Aborting."; exit 1; }
+[ ! -d "${KEYS_PATH}"  ] && { echo >&2 "ERROR: Directory for KEYS_PATH is not found: ${KEYS_PATH}.  Use --keys-path to set.  Aborting."; exit 1; }
+
+if [ "${CREATE_SEC_ELF}" -eq 1 ]; then
+    if [ -z "${OEM_ID}" ]; then
+        echo >&2 "ERROR: --oem-id must be set when --create-sec-elf is used.  Aborting."
+        exit 1
+    fi
+    if [ -z "${OEM_PRODUCT_ID}" ]; then
+        echo >&2 "ERROR: --oem-product-id must be set when --create-sec-elf is used.  Aborting."
+        exit 1
+    fi
+fi
+
+log "Check for ${OUT_DIR} directory"
+if [ ! -d "${OUT_DIR}" ]; then
+    log "> Creating ${OUT_DIR} directory"
+    mkdir ${OUT_DIR}
+else
+    log "> Found ${OUT_DIR} directory"
+fi
+
+log "Checking for existing files in: ${OUT_DIR}"
+FILES_FOUND=0
+ls ${OUT_DIR}/* >/dev/null 2>&1 && FILES_FOUND=1
+if [ "${FILES_FOUND}" -eq 1 ]; then
+    if [ "${FORCE}" -eq 1 ]; then
+        log "> Force flag enabled: overwriting existing images!"
+    else
+        echo >&2 "ERROR: Existing files found.  Use --force to bypass this check.  Aborting."
+        exit 1
+    fi
+else
+    log "> No files found in ${OUT_DIR}.  Proceeding."
+fi
+
+log "Calculating the sha384 hash of the root certificate."
+ROOT_CERT_HASH="0x$(sha384sum ${KEYS_PATH}/${KEYS_ROOT_CERT} | cut -d' ' -f1)"
+log "> Done: ${ROOT_CERT_HASH}"
+
+# Define a newline
+newline=$'\n'
+
+# Get list of valid image IDs from the security profile
+log "Creating a list of valid IMAGE-IDs"
+OIFS="${IFS}"
+IFS=${newline}
+VALID_IMAGE_ID=""
+SKIP_FIRST=0
+for line in $(${SECTOOL} secure-image --available-image-ids --security-profile ${SECURITY_PROFILE})
+do
+    if [ "${SKIP_FIRST}" -eq 0 ]; then
+        SKIP_FIRST=1
+        continue
+    fi
+    NEW_ID=$(echo "${line}" | cut -c4-)
+    debug_log "> Adding: ${NEW_ID}"
+    VALID_IMAGE_ID+="${NEW_ID}"
+    VALID_IMAGE_ID+=$'\n'
+done
+IFS="${OIFS}"
+log "> Done"
+
+IMAGE_ID_MAPPING="\
+aop.mbn AOP${newline}\
+cpucp.elf CPUCP${newline}\
+devcfg.mbn TZ-DEVCFG${newline}\
+hypvm.mbn QHEE${newline}\
+imagefv.elf UEFIFV${newline}\
+multi_image.mbn OEM-MISC${newline}\
+prog_firehose_ddr.elf DEVICE-PROGRAMMER${newline}\
+prog_firehose_lite.elf DEVICE-PROGRAMMER${newline}\
+qupv3fw.elf QUPV3${newline}\
+sec.elf SEC-ELF${newline}\
+shrm.elf SHRM${newline}\
+tz.mbn TZ${newline}\
+uefi.elf UEFI${newline}\
+uefi_sec.mbn TZ-APP-OEM${newline}\
+xbl_config.elf XBL-CONFIG${newline}\
+xbl.elf XBL${newline}\
+XblRamdump.elf XBL-RAM-DUMP${newline}\
+"
+
+# Get a list of *.elf and *.mbn files
+for file in $(ls -1 *.elf *.mbn)
+do
+    debug_log "Found ${file}"
+
+    # Lookup the IMAGE-ID from mapping
+    IMAGE_ID=$(echo -e "${IMAGE_ID_MAPPING}" | grep "${file}" | cut -d' ' -f2)
+    debug_log "> IMAGE_ID mapping: ${IMAGE_ID}"
+    if [ -z "${IMAGE_ID}" ] || [ "${IMAGE_ID}" == "UNKNOWN" ]; then
+        echo >&2 "ERROR: Unable to find IMAGE-ID mapping for ${file}.  Aborting."
+        exit 1
+    fi
+    debug_log "> IMAGE_ID: ${IMAGE_ID}"
+
+    if [ "${IMAGE_ID}" == "SKIP" ]; then
+        log "Skip signing of ${file}"
+        cp ${file} ${OUT_DIR}
+        continue
+    fi
+
+    # Check to make sure the IMAGE_ID is valid for the supplied security-profile
+    if echo "${VALID_IMAGE_ID}" | grep "${IMAGE_ID}" >/dev/null 2>&1; then
+        debug_log "> ${IMAGE_ID} is a valid IMAGE_ID"
+    else
+        echo >&2 "ERROR: IMAGE_ID(${IMAGE_ID}) is not valid for this security-profile(${SECURITY_PROFILE}).  Aborting."
+        exit 1
+    fi
+
+    log "Signing ${file}"
+    ${SECTOOL} secure-image \
+        --sign ${file} --image-id=${IMAGE_ID} \
+        --security-profile ${SECURITY_PROFILE} \
+        --anti-rollback-version=${ANTI_ROLLBACK_VERSION} \
+        --signing-mode LOCAL \
+        --root-certificate=${KEYS_PATH}/${KEYS_ROOT_CERT} --ca-certificate=${KEYS_PATH}/${KEYS_CA_CERT} --ca-key=${KEYS_PATH}/${KEYS_CA_KEY} \
+        --outfile ${OUT_DIR}/${file}
+
+    log "> Verifying root hash of ${OUT_DIR}/${file}"
+    ${SECTOOL} secure-image --verify-root ${ROOT_CERT_HASH} ${OUT_DIR}/${file}
+    if [ $? -ne 0 ]; then
+        echo >&2 "ERROR: Root hash of ${OUT_DIR}/${file} failed verification.  Aborting."
+        exit 1
+    fi
+    log "> Verified."
+done
+
+log "Image signing complete."
+
+# Create sec.elf
+# TOOD: Handle more than 1 root key
+if [ "${CREATE_SEC_ELF}" -eq 1 ]; then
+    log "Creating complete secure boot file (sec.elf)."
+
+    ${SECTOOL} fuse-blower \
+        --security-profile ${SECURITY_PROFILE} \
+        --fuse-pk-hash-0=${ROOT_CERT_HASH} \
+        --fuse-oem-secure-boot1-pk-hash-in-fuse --fuse-oem-secure-boot1-auth-en \
+        --fuse-oem-secure-boot2-pk-hash-in-fuse --fuse-oem-secure-boot2-auth-en \
+        --fuse-oem-secure-boot3-pk-hash-in-fuse --fuse-oem-secure-boot3-auth-en \
+        --fuse-oem-secure-boot-fec-enable --fuse-wdog-en \
+        --fuse-shared-qsee-spiden-disable --fuse-shared-qsee-spniden-disable \
+        --fuse-shared-mss-dbgen-disable --fuse-shared-mss-niden-disable \
+        --fuse-shared-cp-dbgen-disable --fuse-shared-cp-niden-disable \
+        --fuse-shared-ns-dbgen-disable --fuse-shared-ns-niden-disable \
+        --fuse-apps-dbgen-disable --fuse-apps-niden-disable \
+        --fuse-shared-misc-debug-disable \
+        --fuse-eku-enforcement-en \
+        --fuse-anti-rollback-feature-en=0xF \
+        --fuse-sec-key-derivation-key=0x00 \
+        --fuse-read-permissions-write-disable \
+        --fuse-oem-configuration-write-disable \
+        --fuse-secondary-key-derivation-key-read-disable \
+        --fuse-public-key-hash-0-write-disable \
+        --fuse-oem-secure-boot-write-disable \
+        --fuse-secondary-key-derivation-key-write-disable --fuse-secondary-key-derivation-key-fec-enable \
+        --fuse-fec-enables-write-disable \
+        --fuse-oem-hw-id=${OEM_ID} --fuse-oem-product-id=${OEM_PRODUCT_ID} \
+        --generate --sign --signing-mode=LOCAL \
+        --root-certificate=${KEYS_PATH}/${KEYS_ROOT_CERT} --ca-certificate=${KEYS_PATH}/${KEYS_CA_CERT} --ca-key=${KEYS_PATH}/${KEYS_CA_KEY} \
+        --oem-id=${OEM_ID} --oem-product-id=${OEM_PRODUCT_ID} --outfile ${OUT_DIR}/sec.elf
+
+    log "> Done."
+fi
+
+if [ ! -z "${PACKAGE_FILENAME}" ]; then
+    log "Copying non- *.elf and *.mbn files to ${OUT_DIR}"
+    find . -maxdepth 1 -type f -not -iname "*.elf" -not -iname "*.mbn" -exec cp "{}" "${OUT_DIR}/{}" ';'
+    log "> Done."
+
+    log "Creating zip package of ${OUT_DIR}"
+    zip -r ${PACKAGE_FILENAME} ${OUT_DIR}
+    log "> Done."
+fi
