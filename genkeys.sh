@@ -215,17 +215,20 @@ do
         log "> Created RSA Attestation CA ${key} key"
 
         # Dropped "-days 7300" from original command
+        # Added -sha384
         openssl req -new -key ${OUT_DIR}/qpsa_attestca${key}.key -out ${OUT_DIR}/attestca${key}.csr \
-            -subj /C=US/ST=CA/L="San Diego"/OU="CDMA Technologies"/O=QUALCOMM/CN="QUALCOMM Attestation CA" -config opensslroot.cfg
+            -subj /C=US/ST=CA/L="San Diego"/OU="CDMA Technologies"/O=QUALCOMM/CN="QUALCOMM Attestation CA" \
+            -config opensslroot.cfg -sha384
 
         if [ "${USE_OPENSSL1}" -eq 1 ]; then
-            # Dropped: "–sha256" from original command
+            # Updated -sha256 to -sha384
             openssl x509 -req -in ${OUT_DIR}/attestca${key}.csr -CA ${OUT_DIR}/rootca_pem${key}.crt -CAkey ${OUT_DIR}/qpsa_rootca${key}.key \
-                -out ${OUT_DIR}/attestca${key}_pem.crt -set_serial 5 -days 7300 -extfile v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha256
+                -out ${OUT_DIR}/attestca${key}_pem.crt -sha384 -set_serial 5 -days 7300 -extfile v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha256
         else
-            # Dropped: "–sha256" and "- sigopt digest:sha256" from original command
+            # Dropped: "- sigopt digest:sha256" from original command
+            # Updated -sha256 to -sha384
             openssl x509 -req -in ${OUT_DIR}/attestca${key}.csr -CA ${OUT_DIR}/rootca_pem${key}.crt -CAkey ${OUT_DIR}/qpsa_rootca${key}.key \
-                -out ${OUT_DIR}/attestca${key}_pem.crt -set_serial 5 -days 7300 -extfile v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1
+                -out ${OUT_DIR}/attestca${key}_pem.crt -sha384 -set_serial 5 -days 7300 -extfile v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1
         fi
 
         openssl x509 -inform PEM -in ${OUT_DIR}/attestca${key}_pem.crt -outform DER -out ${OUT_DIR}/qpsa_attestca${key}.cer
