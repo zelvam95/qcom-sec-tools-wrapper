@@ -352,9 +352,30 @@ done
 
 log "Image signing complete."
 
-# Create sec.elf
+# Create basic_sec.elf and sec.elf
 # TOOD: Handle more than 1 root key
 if [ "${CREATE_SEC_ELF}" -eq 1 ]; then
+    log "Creating basic secure boot file (basic_sec.elf)."
+
+    ${SECTOOL} fuse-blower \
+        --security-profile ${SECURITY_PROFILE} \
+        --fuse-pk-hash-0=${ROOT_CERT_HASH} \
+        --fuse-oem-secure-boot1-pk-hash-in-fuse --fuse-oem-secure-boot1-auth-en \
+        --fuse-oem-secure-boot2-pk-hash-in-fuse --fuse-oem-secure-boot2-auth-en \
+        --fuse-oem-secure-boot3-pk-hash-in-fuse --fuse-oem-secure-boot3-auth-en \
+        --fuse-oem-hw-id=${FUSE_OEM_HW_ID} --fuse-oem-product-id=${FUSE_OEM_PRODUCT_ID} \
+        --generate --sign --signing-mode=LOCAL \
+        --root-certificate=${KEYS_PATH}/${KEYS_ROOT_CERT} --ca-certificate=${KEYS_PATH}/${KEYS_CA_CERT} --ca-key=${KEYS_PATH}/${KEYS_CA_KEY} \
+        --outfile ${OUT_DIR}/basic_sec.elf
+
+    log "> Verifying root hash of ${OUT_DIR}/basic_sec.elf"
+    ${SECTOOL} fuse-blower --verify-root ${ROOT_CERT_HASH} ${OUT_DIR}/basic_sec.elf
+    if [ $? -ne 0 ]; then
+        echo >&2 "ERROR: Root hash of ${OUT_DIR}/basic_sec.elf failed verification.  Aborting."
+        exit 1
+    fi
+    log "> Verified."
+
     log "Creating complete secure boot file (sec.elf)."
 
     ${SECTOOL} fuse-blower \
