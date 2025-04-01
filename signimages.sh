@@ -300,6 +300,8 @@ tz.mbn TZ${newline}\
 uefi.elf UEFI${newline}\
 uefi_sec.mbn TZ-APP-OEM${newline}\
 xbl_config.elf XBL-CONFIG${newline}\
+xbl_config_gunyah.elf XBL-CONFIG${newline}\
+xbl_config_kvm.elf XBL-CONFIG${newline}\
 xbl.elf XBL${newline}\
 XblRamdump.elf XBL-RAM-DUMP${newline}\
 "
