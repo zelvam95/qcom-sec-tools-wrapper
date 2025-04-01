@@ -385,7 +385,13 @@ if [ "${CREATE_SEC_ELF}" -eq 1 ]; then
         --root-certificate=${KEYS_PATH}/${KEYS_ROOT_CERT} --ca-certificate=${KEYS_PATH}/${KEYS_CA_CERT} --ca-key=${KEYS_PATH}/${KEYS_CA_KEY} \
         --outfile ${OUT_DIR}/sec.elf
 
-    log "> Done."
+    log "> Verifying root hash of ${OUT_DIR}/sec.elf"
+    ${SECTOOL} fuse-blower --verify-root ${ROOT_CERT_HASH} ${OUT_DIR}/sec.elf
+    if [ $? -ne 0 ]; then
+        echo >&2 "ERROR: Root hash of ${OUT_DIR}/sec.elf failed verification.  Aborting."
+        exit 1
+    fi
+    log "> Verified."
 fi
 
 if [ ! -z "${PACKAGE_FILENAME}" ]; then
