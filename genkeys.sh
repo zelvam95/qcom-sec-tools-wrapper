@@ -12,7 +12,6 @@ USE_OPENSSL1=0
 
 # Flags
 DEBUG=0
-DUMP=0
 FORCE=0
 QUIET=0
 USE_ECSDA=1
@@ -25,11 +24,6 @@ function parse_args()
         --debug)
             DEBUG=1
             echo "FLAG: Debug: enabled"
-            shift
-            ;;
-        --dump-values)
-            DUMP=1
-            echo "FLAG: Dumping values: enabled"
             shift
             ;;
         --force)
@@ -136,9 +130,6 @@ fi
 
 log "Generating randfile"
 dd if=/dev/urandom of=${OUT_DIR}/randfile bs=256 count=1 > /dev/null 2>&1
-if [ "${DUMP}" -eq 1 ]; then
-    hexdump -c ${OUT_DIR}/randfile
-fi
 log "> Generated."
 
 
@@ -197,10 +188,6 @@ else
 
     openssl x509 -in ${OUT_DIR}/rootca_pem.crt -inform PEM -out ${OUT_DIR}/qpsa_rootca.cer -outform DER
     log "> Created RSA root CA certificate"
-
-    if [ "${DUMP}" -eq 1 ]; then
-        openssl x509 -text -inform DER -in ${OUT_DIR}/qpsa_rootca.cer
-    fi
 
     log "Generate the attestation CA key pair and certificate"
 
