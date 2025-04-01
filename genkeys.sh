@@ -10,6 +10,8 @@ VALID_KEY_SIZES="2048 4096"
 MIN_OPENSSL_VER="1.1.1"
 USE_OPENSSL1=0
 ROOT_CERT_TOTALNUM=4
+ROOT_CERT_SUBJECT="/CN=OEM Root CA ###/O=SecTools/OU=OEM Key/L=San Diego/ST=California/C=US"
+CA_CERT_SUBJECT="/CN=OEM Attestation CA ###/O=SecTools/OU=OEM Key/L=San Diego/ST=California/C=US"
 
 # Flags
 DEBUG=0
@@ -22,6 +24,12 @@ function parse_args()
     while [ $# -gt 0 ]
     do
         case $1 in
+        --ca-cert-subject)
+            CA_CERT_SUBJECT=$2
+            echo "FLAG: CA_CERT_SUBJECT: ${CA_CERT_SUBJECT}"
+            shift
+            shift
+            ;;
         --debug)
             DEBUG=1
             echo "FLAG: Debug: enabled"
@@ -54,6 +62,12 @@ function parse_args()
             echo "FLAG: Quiet mode"
             shift
             ;;
+        --root-cert-subject)
+            ROOT_CERT_SUBJECT=$2
+            echo "FLAG: ROOT_CERT_SUBJECT: ${ROOT_CERT_SUBJECT}"
+            shift
+            shift
+            ;;
         --root-cert-totalnum)
             case $2 in
                 1 | 2 | 3 | 4)
@@ -75,11 +89,13 @@ function parse_args()
             ;;
         --help)
             echo "Usage parameters:"
+            echo "--ca-cert-subject: subject data for CA cert(s)."
             echo "  Make sure to use quotes and place ### where the key # should go."
             echo "--debug: enables debug logging"
             echo "--force: force overwrite files (dangerous!)"
             echo "--key-size: set RSA key size to 2048 or 4096"
             echo "--quiet: disable normal logging"
+            echo "--root-cert-subject: subject data for root cert(s)"
             echo "  Make sure to use quotes and place ### where the key # should go."
             echo "--root-cert-totalnum: set # of root certs to use. 1-4 allowed (default: 4)"
             echo "--use-rsa: Use RSA instead of ECDSA for generating keys (default: use ECDSA)"
@@ -175,7 +191,7 @@ do
         log "> Created ECDSA root ${key} key"
 
         openssl req -new -key ${OUT_DIR}/qpsa_rootca${key}.key -sha384 -out ${OUT_DIR}/rootca${key}_pem.crt \
-            -subj '/C=US/CN=Generated OEM Root CA/OU=CDMA Technologies/OU=General Use OEM Key (OEM should update all fields)/L=San Diego/O=SecTools/ST=California' \
+            -subj "$(echo "${ROOT_CERT_SUBJECT}" | sed "s/###/${key}/g")" \
             -config opensslroot.cfg -x509 -days 7300 -set_serial 1
 
         openssl x509 -in ${OUT_DIR}/rootca${key}_pem.crt -inform PEM -out ${OUT_DIR}/qpsa_rootca${key}.cer -outform DER
@@ -187,7 +203,7 @@ do
         log "> Created EC Atrestation CA ${key} key"
 
         openssl req -new -key ${OUT_DIR}/qpsa_attestca${key}.key -out ${OUT_DIR}/ca${key}.csr \
-            -subj '/C=US/ST=California/CN=Generated OEM Attestation CA/O=SecTools/L=San Diego' \
+            -subj "$(echo "${CA_CERT_SUBJECT}" | sed "s/###/${key}/g")" \
             -config opensslroot.cfg -sha384
 
         openssl x509 -req -in ${OUT_DIR}/ca${key}.csr -CA ${OUT_DIR}/rootca${key}_pem.crt -CAkey ${OUT_DIR}/qpsa_rootca${key}.key \
@@ -208,13 +224,13 @@ do
         if [ "${USE_OPENSSL1}" -eq 1 ]; then
             # Updated -sha256 to -sha384
             openssl req -new -sha384 -key ${OUT_DIR}/qpsa_rootca${key}.key -x509 -out ${OUT_DIR}/rootca_pem${key}.crt \
-                -subj /C=US/ST=California/L="San Diego"/OU="General Use Test Key (for testing 13 only)"/OU="CDMA Technologies"/O=QUALCOMM/CN="QCT Root CA 1" \
+                -subj "$(echo "${ROOT_CERT_SUBJECT}" | sed "s/###/${key}/g")" \
                 -days 7300 -set_serial 1 -config opensslroot.cfg -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha384
         else
             # Dropped "-sigopt digest:sha256" from the original command
             # Updated -sha256 to -sha384
             openssl req -new -sha384 -key ${OUT_DIR}/qpsa_rootca${key}.key -x509 -out ${OUT_DIR}/rootca_pem${key}.crt \
-                -subj /C=US/ST=California/L="San Diego"/OU="General Use Test Key (for testing 13 only)"/OU="CDMA Technologies"/O=QUALCOMM/CN="QCT Root CA 1" \
+                -subj "$(echo "${ROOT_CERT_SUBJECT}" | sed "s/###/${key}/g")" \
                 -days 7300 -set_serial 1 -config opensslroot.cfg -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1
         fi
 
@@ -229,7 +245,7 @@ do
         # Dropped "-days 7300" from original command
         # Added -sha384
         openssl req -new -key ${OUT_DIR}/qpsa_attestca${key}.key -out ${OUT_DIR}/attestca${key}.csr \
-            -subj /C=US/ST=CA/L="San Diego"/OU="CDMA Technologies"/O=QUALCOMM/CN="QUALCOMM Attestation CA" \
+            -subj "$(echo "${CA_CERT_SUBJECT}" | sed "s/###/${key}/g")" \
             -config opensslroot.cfg -sha384
 
         if [ "${USE_OPENSSL1}" -eq 1 ]; then
