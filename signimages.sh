@@ -6,10 +6,12 @@ set -e
 # Settings
 VERSION="0.1"
 KEYS_PATH="OEM-KEYS"
-KEYS_ROOT_CERT="qpsa_rootca.cer"
-KEYS_CA_CERT="qpsa_attestca.cer"
-KEYS_CA_KEY="qpsa_attestca.key"
+KEYS_ROOT_CERT="qpsa_rootca###.cer"
+KEYS_CA_CERT="qpsa_attestca###.cer"
+KEYS_CA_KEY="qpsa_attestca###.key"
 KEYS_ROOTS_HASH="sha384_roots_hash.txt"
+ROOT_CERT_TOTALNUM=4
+SIGNING_KEY_INDEX=3
 IMAGE_DIR="."
 OUT_DIR="./signed_images"
 ANTI_ROLLBACK_VERSION=0x0
@@ -143,6 +145,20 @@ function parse_args()
             echo "FLAG: Quiet mode"
             shift
             ;;
+        --root-cert-totalnum)
+            case $2 in
+                1 | 2 | 3 | 4)
+                    ROOT_CERT_TOTALNUM=$2
+                    echo "FLAG: ROOT_CERT_TOTALNUM: ${ROOT_CERT_TOTALNUM}"
+                    ;;
+                *)
+                    echo >&2 "ERROR: ROOT_CERT_TOTALNUM values can be 1,2,3 or 4: $2.  Aborting."
+                    exit 1
+                    ;;
+            esac
+            shift
+            shift
+            ;;
         --sectoolv2)
             SECTOOL=$2
             echo "FLAG: SECTOOL: ${SECTOOL}"
@@ -152,6 +168,20 @@ function parse_args()
         --security-profile)
             SECURITY_PROFILE=$2
             echo "FLAG: SECURITY_PROFILE: ${SECURITY_PROFILE}"
+            shift
+            shift
+            ;;
+        --signing-key-index)
+            case $2 in
+                0 | 1 | 2 | 3)
+                    SIGNING_KEY_INDEX=$2
+                    echo "FLAG: SIGNING_KEY_INDEX: ${SIGNING_KEY_INDEX}"
+                    ;;
+                *)
+                    echo >&2 "ERROR: SIGNING_KEY_INDEX values can be 0,1,2 or 3: $2.  Aborting."
+                    exit 1
+                    ;;
+            esac
             shift
             shift
             ;;
@@ -178,8 +208,10 @@ function parse_args()
             echo "--out-dir: output directory for signed images (default: ${OUT_DIR})"
             echo "--package-filename: output filename, if set will create a .zip package of all standard files + signed images for distribution"
             echo "--quiet: disable normal logging"
+            echo "--root-cert-totalnum: set # of root certs to use. 1-4 allowed (default: 4)"
             echo "--sectoolv2: path to sectoolv2 binary"
             echo "--security-profile: path to *-security-profile.xml"
+            echo "--signing-key-index: which CA key index to use for signing (default: ${SIGNING_KEY_INDEX})"
             exit 0
             ;;
         *)
@@ -241,6 +273,11 @@ if [ "${CREATE_SEC_ELF}" -eq 1 ]; then
         echo >&2 "ERROR: --fuse-sec-key-derivation-key must be set when --create-sec-elf is enabled.  Aborting."
         exit 1
     fi
+fi
+
+if [ "${SIGNING_KEY_INDEX}" -ge "${ROOT_CERT_TOTALNUM}" ]; then
+        echo >&2 "ERROR: --signing-key-index(${SIGNING_KEY_INDEX}) cannot be equal or greater to --root-cert-totalnum(${ROOT_CERT_TOTALNUM}).  Aborting."
+        exit 1
 fi
 
 log "Check for ${OUT_DIR} directory"
@@ -318,6 +355,40 @@ xbl.elf XBL${newline}\
 XblRamdump.elf XBL-RAM-DUMP${newline}\
 "
 
+# Create a list of root certificates
+ROOT_CERT_LIST=""
+key=0
+# Loop through ROOT_CERT_TOTALNUM
+while [ "${key}" -lt ${ROOT_CERT_TOTALNUM} ]
+do
+    KEY_FILENAME=$(echo "${KEYS_PATH}/${KEYS_ROOT_CERT}" | sed "s/###/${key}/g")
+    if [ ! -f "${KEY_FILENAME}" ]; then
+        echo >&2 "ERROR: Cannot find root certificate: ${KEY_FILENAME}.  Aborting."
+        exit 1
+    fi
+    ROOT_CERT_LIST+=" ${KEY_FILENAME}"
+    # increment key counter
+    key=$((key + 1))
+done
+
+KEYS_CA_KEY_FILENAME=$(echo "${KEYS_PATH}/${KEYS_CA_KEY}" | sed "s/###/${SIGNING_KEY_INDEX}/g")
+if [ ! -f "${KEYS_CA_KEY_FILENAME}" ]; then
+    echo >&2 "ERROR: Cannot find CA key: ${KEYS_CA_KEY_FILENAME}.  Aborting."
+    exit 1
+fi
+
+KEYS_CA_CERT_FILENAME=$(echo "${KEYS_PATH}/${KEYS_CA_CERT}" | sed "s/###/${SIGNING_KEY_INDEX}/g")
+if [ ! -f "${KEYS_CA_CERT_FILENAME}" ]; then
+    echo >&2 "ERROR: Cannot find CA certificate: ${KEYS_CA_CERT_FILENAME}.  Aborting."
+    exit 1
+fi
+
+# Signing data for more than 1 root key
+ROOT_CERT_INDEX=""
+if [ "${ROOT_CERT_TOTALNUM}" -gt 1 ]; then
+    ROOT_CERT_INDEX="--root-certificate-index ${SIGNING_KEY_INDEX}"
+fi
+
 # Get a list of *.elf and *.mbn files
 for file in $(ls -1 *.elf *.mbn)
 do
@@ -352,7 +423,9 @@ do
         --security-profile ${SECURITY_PROFILE} \
         --anti-rollback-version=${ANTI_ROLLBACK_VERSION} \
         --signing-mode LOCAL \
-        --root-certificate=${KEYS_PATH}/${KEYS_ROOT_CERT} --ca-certificate=${KEYS_PATH}/${KEYS_CA_CERT} --ca-key=${KEYS_PATH}/${KEYS_CA_KEY} \
+        ${ROOT_CERT_INDEX} \
+        --root-certificate ${ROOT_CERT_LIST} \
+        --ca-certificate=${KEYS_CA_CERT_FILENAME} --ca-key=${KEYS_CA_KEY_FILENAME} \
         --outfile ${OUT_DIR}/${file}
 
     log "> Verifying root hash of ${OUT_DIR}/${file}"
@@ -369,6 +442,13 @@ log "Image signing complete."
 # Create basic_sec.elf and sec.elf
 # TOOD: Handle more than 1 root key
 if [ "${CREATE_SEC_ELF}" -eq 1 ]; then
+    FUSE_ROOT_TOTAL_NUM=""
+    ROOT_CERT_COUNT_INDEX=""
+    if [ "${ROOT_CERT_TOTALNUM}" -gt 1 ]; then
+        FUSE_ROOT_TOTAL_NUM="--fuse-root-cert-total-num=0x${ROOT_CERT_TOTALNUM}"
+        ROOT_CERT_COUNT_INDEX="--root-certificate-count ${ROOT_CERT_TOTALNUM} --root-certificate-index ${SIGNING_KEY_INDEX}"
+    fi
+
     log "Creating basic secure boot file (basic_sec.elf)."
 
     ${SECTOOL} fuse-blower \
@@ -378,8 +458,11 @@ if [ "${CREATE_SEC_ELF}" -eq 1 ]; then
         --fuse-oem-secure-boot2-pk-hash-in-fuse --fuse-oem-secure-boot2-auth-en \
         --fuse-oem-secure-boot3-pk-hash-in-fuse --fuse-oem-secure-boot3-auth-en \
         --fuse-oem-hw-id=${FUSE_OEM_HW_ID} --fuse-oem-product-id=${FUSE_OEM_PRODUCT_ID} \
+        ${FUSE_ROOT_TOTAL_NUM} \
         --generate --sign --signing-mode=LOCAL \
-        --root-certificate=${KEYS_PATH}/${KEYS_ROOT_CERT} --ca-certificate=${KEYS_PATH}/${KEYS_CA_CERT} --ca-key=${KEYS_PATH}/${KEYS_CA_KEY} \
+        ${ROOT_CERT_COUNT_INDEX} \
+        --root-certificate ${ROOT_CERT_LIST} \
+        --ca-certificate ${KEYS_CA_CERT_FILENAME} --ca-key ${KEYS_CA_KEY_FILENAME} \
         --outfile ${OUT_DIR}/basic_sec.elf
 
     log "> Verifying root hash of ${OUT_DIR}/basic_sec.elf"
@@ -416,8 +499,11 @@ if [ "${CREATE_SEC_ELF}" -eq 1 ]; then
         --fuse-secondary-key-derivation-key-write-disable --fuse-secondary-key-derivation-key-fec-enable \
         --fuse-fec-enables-write-disable \
         --fuse-oem-hw-id=${FUSE_OEM_HW_ID} --fuse-oem-product-id=${FUSE_OEM_PRODUCT_ID} \
+        ${FUSE_ROOT_TOTAL_NUM} \
         --generate --sign --signing-mode=LOCAL \
-        --root-certificate=${KEYS_PATH}/${KEYS_ROOT_CERT} --ca-certificate=${KEYS_PATH}/${KEYS_CA_CERT} --ca-key=${KEYS_PATH}/${KEYS_CA_KEY} \
+        ${ROOT_CERT_COUNT_INDEX} \
+        --root-certificate ${ROOT_CERT_LIST} \
+        --ca-certificate ${KEYS_CA_CERT_FILENAME} --ca-key ${KEYS_CA_KEY_FILENAME} \
         --outfile ${OUT_DIR}/sec.elf
 
     log "> Verifying root hash of ${OUT_DIR}/sec.elf"
