@@ -73,6 +73,18 @@ function parse_args()
             echo "FLAG: Use RSA: enabled"
             shift
             ;;
+        --help)
+            echo "Usage parameters:"
+            echo "  Make sure to use quotes and place ### where the key # should go."
+            echo "--debug: enables debug logging"
+            echo "--force: force overwrite files (dangerous!)"
+            echo "--key-size: set RSA key size to 2048 or 4096"
+            echo "--quiet: disable normal logging"
+            echo "  Make sure to use quotes and place ### where the key # should go."
+            echo "--root-cert-totalnum: set # of root certs to use. 1-4 allowed (default: 4)"
+            echo "--use-rsa: Use RSA instead of ECDSA for generating keys (default: use ECDSA)"
+            exit 0
+            ;;
         *)
             shift
             ;;
