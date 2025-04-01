@@ -9,6 +9,7 @@ KEYS_PATH="OEM-KEYS"
 KEYS_ROOT_CERT="qpsa_rootca.cer"
 KEYS_CA_CERT="qpsa_attestca.cer"
 KEYS_CA_KEY="qpsa_attestca.key"
+KEYS_ROOTS_HASH="sha384_roots_hash.txt"
 IMAGE_DIR="."
 OUT_DIR="./signed_images"
 ANTI_ROLLBACK_VERSION=0x0
@@ -113,6 +114,12 @@ function parse_args()
             shift
             shift
             ;;
+        --keys-root-hash-filename)
+            KEYS_ROOTS_HASH=$2
+            echo "FLAG: KEYS_ROOTS_HASH: ${KEYS_ROOTS_HASH}"
+            shift
+            shift
+            ;;
         --image-dir)
             IMAGE_DIR=$2
             echo "FLAG: IMAGE_DIR: ${IMAGE_DIR}"
@@ -166,6 +173,7 @@ function parse_args()
             echo "--keys-root-cert-filename: root cert filename (default: ${KEYS_ROOT_CERT})"
             echo "--keys-ca-cert-filename: ca cert filename (default: ${KEYS_CA_CERT})"
             echo "--keys-ca-key-filename: ca key filename (default: ${KEYS_CA_KEY})"
+            echo "--keys-root-hash-filename: roots hash filename (default: ${KEYS_ROOTS_HASH})"
             echo "--image-dir: in file location for images to be signed: *.elf and *.mbn (default: ${IMAGE_DIR})"
             echo "--out-dir: output directory for signed images (default: ${OUT_DIR})"
             echo "--package-filename: output filename, if set will create a .zip package of all standard files + signed images for distribution"
@@ -257,9 +265,13 @@ else
     log "> No files found in ${OUT_DIR}.  Proceeding."
 fi
 
-log "Calculating the sha384 hash of the root certificate."
-ROOT_CERT_HASH="0x$(sha384sum ${KEYS_PATH}/${KEYS_ROOT_CERT} | cut -d' ' -f1)"
-log "> Done: ${ROOT_CERT_HASH}"
+if [ ! -f "${KEYS_PATH}/${KEYS_ROOTS_HASH}" ]; then
+    echo >&2 "ERROR: Cannot find roots hash file: ${KEYS_PATH}/${KEYS_ROOTS_HASH}.  Aborting."
+    exit 1
+fi
+log "Reading the sha384 hash of the root certificate(s)."
+ROOT_CERT_HASH="0x$(cat ${KEYS_PATH}/${KEYS_ROOTS_HASH} | cut -d' ' -f2)"
+log "> Done"
 
 # Define a newline
 newline=$'\n'
