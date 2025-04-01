@@ -153,82 +153,83 @@ key=0
 while [ "${key}" -lt ${ROOT_CERT_TOTALNUM} ]
 do
     if [ "${USE_ECSDA}" -eq 1 ]; then
+
         # Generate ECDSA root key and certificate
         # https://docs.qualcomm.com/bundle/publicresource/topics/80-70015-11/generate-ecdsa-root-key-and-certificate.html
 
-        log "Generate the ECDSA root key and certificate"
+        log "Generate the ECDSA root ${key} key and certificate"
 
-        openssl ecparam -genkey -name secp384r1 -outform PEM -out ${OUT_DIR}/qpsa_rootca.key
-        log "> Created ECDSA root key"
+        openssl ecparam -genkey -name secp384r1 -outform PEM -out ${OUT_DIR}/qpsa_rootca${key}.key
+        log "> Created ECDSA root ${key} key"
 
-        openssl req -new -key ${OUT_DIR}/qpsa_rootca.key -sha384 -out ${OUT_DIR}/rootca_pem.crt \
+        openssl req -new -key ${OUT_DIR}/qpsa_rootca${key}.key -sha384 -out ${OUT_DIR}/rootca${key}_pem.crt \
             -subj '/C=US/CN=Generated OEM Root CA/OU=CDMA Technologies/OU=General Use OEM Key (OEM should update all fields)/L=San Diego/O=SecTools/ST=California' \
             -config opensslroot.cfg -x509 -days 7300 -set_serial 1
 
-        openssl x509 -in ${OUT_DIR}/rootca_pem.crt -inform PEM -out ${OUT_DIR}/qpsa_rootca.cer -outform DER
-        log "> Created ECDSA root certificate"
+        openssl x509 -in ${OUT_DIR}/rootca${key}_pem.crt -inform PEM -out ${OUT_DIR}/qpsa_rootca${key}.cer -outform DER
+        log "> Created ECDSA root ${key} certificate"
 
-        log "Generate the intermediate certificate authority (CA) key pair and certificate"
+        log "Generate the intermediate certificate authority (CA) ${key} key and certificate"
 
-        openssl ecparam -genkey -name secp384r1 -outform PEM -out ${OUT_DIR}/qpsa_attestca.key
-        log "> Created EC Atrestation CA key"
+        openssl ecparam -genkey -name secp384r1 -outform PEM -out ${OUT_DIR}/qpsa_attestca${key}.key
+        log "> Created EC Atrestation CA ${key} key"
 
-        openssl req -new -key ${OUT_DIR}/qpsa_attestca.key -out ${OUT_DIR}/ca.csr \
+        openssl req -new -key ${OUT_DIR}/qpsa_attestca${key}.key -out ${OUT_DIR}/ca${key}.csr \
             -subj '/C=US/ST=California/CN=Generated OEM Attestation CA/O=SecTools/L=San Diego' \
             -config opensslroot.cfg -sha384
 
-        openssl x509 -req -in ${OUT_DIR}/ca.csr -CA ${OUT_DIR}/rootca_pem.crt -CAkey ${OUT_DIR}/qpsa_rootca.key \
-            -out ${OUT_DIR}/attestca_pem.crt -set_serial 1 -days 7300 -extfile v3.ext -sha384 -CAcreateserial
+        openssl x509 -req -in ${OUT_DIR}/ca${key}.csr -CA ${OUT_DIR}/rootca${key}_pem.crt -CAkey ${OUT_DIR}/qpsa_rootca${key}.key \
+            -out ${OUT_DIR}/attestca${key}_pem.crt -set_serial 1 -days 7300 -extfile v3.ext -sha384 -CAcreateserial
 
-        openssl x509 -inform PEM -in ${OUT_DIR}/attestca_pem.crt -outform DER -out ${OUT_DIR}/qpsa_attestca.cer
-        log "> Created EC Attestation CA certificate"
+        openssl x509 -inform PEM -in ${OUT_DIR}/attestca${key}_pem.crt -outform DER -out ${OUT_DIR}/qpsa_attestca${key}.cer
+        log "> Created EC Attestation CA ${key} certificate"
 
     else
         # Generate RSA CA key pair and certificate
         # https://docs.qualcomm.com/bundle/publicresource/topics/80-70015-11/generate-rsa-root-ca-key-pair-and-certificate.html
 
-        log "Generate the root CA key pair and certificate"
+        log "Generate the root CA ${key} key and certificate"
 
-        openssl genrsa -out ${OUT_DIR}/qpsa_rootca.key ${KEY_SIZE}
-        log "> Created RSA root CA key"
+        openssl genrsa -out ${OUT_DIR}/qpsa_rootca${key}.key ${KEY_SIZE}
+        log "> Created RSA root CA ${key} key"
 
         if [ "${USE_OPENSSL1}" -eq 1 ]; then
             # Updated -sha256 to -sha384
-            openssl req -new -sha384 -key ${OUT_DIR}/qpsa_rootca.key -x509 -out ${OUT_DIR}/rootca_pem.crt \
+            openssl req -new -sha384 -key ${OUT_DIR}/qpsa_rootca${key}.key -x509 -out ${OUT_DIR}/rootca_pem${key}.crt \
                 -subj /C=US/ST=California/L="San Diego"/OU="General Use Test Key (for testing 13 only)"/OU="CDMA Technologies"/O=QUALCOMM/CN="QCT Root CA 1" \
                 -days 7300 -set_serial 1 -config opensslroot.cfg -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha384
         else
             # Dropped "-sigopt digest:sha256" from the original command
             # Updated -sha256 to -sha384
-            openssl req -new -sha384 -key ${OUT_DIR}/qpsa_rootca.key -x509 -out ${OUT_DIR}/rootca_pem.crt \
+            openssl req -new -sha384 -key ${OUT_DIR}/qpsa_rootca${key}.key -x509 -out ${OUT_DIR}/rootca_pem${key}.crt \
                 -subj /C=US/ST=California/L="San Diego"/OU="General Use Test Key (for testing 13 only)"/OU="CDMA Technologies"/O=QUALCOMM/CN="QCT Root CA 1" \
                 -days 7300 -set_serial 1 -config opensslroot.cfg -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1
         fi
 
-        openssl x509 -in ${OUT_DIR}/rootca_pem.crt -inform PEM -out ${OUT_DIR}/qpsa_rootca.cer -outform DER
+        openssl x509 -in ${OUT_DIR}/rootca_pem${key}.crt -inform PEM -out ${OUT_DIR}/qpsa_rootca${key}.cer -outform DER
         log "> Created RSA root CA certificate"
 
-        log "Generate the attestation CA key pair and certificate"
+        log "Generate the attestation CA ${key} key and certificate"
 
-        openssl genrsa -out ${OUT_DIR}/qpsa_attestca.key ${KEY_SIZE}
-        log "> Created RSA Attestation CA key"
+        openssl genrsa -out ${OUT_DIR}/qpsa_attestca${key}.key ${KEY_SIZE}
+        log "> Created RSA Attestation CA ${key} key"
 
         # Dropped "-days 7300" from original command
-        openssl req -new -key ${OUT_DIR}/qpsa_attestca.key -out ${OUT_DIR}/attestca.csr \
+        openssl req -new -key ${OUT_DIR}/qpsa_attestca${key}.key -out ${OUT_DIR}/attestca${key}.csr \
             -subj /C=US/ST=CA/L="San Diego"/OU="CDMA Technologies"/O=QUALCOMM/CN="QUALCOMM Attestation CA" -config opensslroot.cfg
 
         if [ "${USE_OPENSSL1}" -eq 1 ]; then
             # Dropped: "–sha256" from original command
-            openssl x509 -req -in ${OUT_DIR}/attestca.csr -CA ${OUT_DIR}/rootca_pem.crt -CAkey ${OUT_DIR}/qpsa_rootca.key \
-                -out ${OUT_DIR}/attestca_pem.crt -set_serial 5 -days 7300 -extfile v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha256
+            openssl x509 -req -in ${OUT_DIR}/attestca${key}.csr -CA ${OUT_DIR}/rootca_pem${key}.crt -CAkey ${OUT_DIR}/qpsa_rootca${key}.key \
+                -out ${OUT_DIR}/attestca${key}_pem.crt -set_serial 5 -days 7300 -extfile v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha256
         else
             # Dropped: "–sha256" and "- sigopt digest:sha256" from original command
-            openssl x509 -req -in ${OUT_DIR}/attestca.csr -CA ${OUT_DIR}/rootca_pem.crt -CAkey ${OUT_DIR}/qpsa_rootca.key \
-                -out ${OUT_DIR}/attestca_pem.crt -set_serial 5 -days 7300 -extfile v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1
+            openssl x509 -req -in ${OUT_DIR}/attestca${key}.csr -CA ${OUT_DIR}/rootca_pem${key}.crt -CAkey ${OUT_DIR}/qpsa_rootca${key}.key \
+                -out ${OUT_DIR}/attestca${key}_pem.crt -set_serial 5 -days 7300 -extfile v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1
         fi
 
-        openssl x509 -inform PEM -in ${OUT_DIR}/attestca_pem.crt -outform DER -out ${OUT_DIR}/qpsa_attestca.cer
-        log "> Created RSA Attestation CA certificate"
+        openssl x509 -inform PEM -in ${OUT_DIR}/attestca${key}_pem.crt -outform DER -out ${OUT_DIR}/qpsa_attestca${key}.cer
+        log "> Created RSA Attestation CA ${key} certificate"
     fi
 
     # increment key counter
