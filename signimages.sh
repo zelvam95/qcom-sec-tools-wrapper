@@ -445,8 +445,9 @@ if [ "${CREATE_SEC_ELF}" -eq 1 ]; then
     FUSE_ROOT_TOTAL_NUM=""
     ROOT_CERT_COUNT_INDEX=""
     if [ "${ROOT_CERT_TOTALNUM}" -gt 1 ]; then
-        FUSE_ROOT_TOTAL_NUM="--fuse-root-cert-total-num=0x${ROOT_CERT_TOTALNUM}"
-        ROOT_CERT_COUNT_INDEX="--root-certificate-count ${ROOT_CERT_TOTALNUM} --root-certificate-index ${SIGNING_KEY_INDEX}"
+        root_total_num=$((ROOT_CERT_TOTALNUM - 1))
+        FUSE_ROOT_TOTAL_NUM="--fuse-root-cert-total-num 0x${root_total_num}"
+        ROOT_CERT_COUNT_INDEX="--root-certificate-index ${SIGNING_KEY_INDEX}"
     fi
 
     log "Creating basic secure boot file (basic_sec.elf)."
