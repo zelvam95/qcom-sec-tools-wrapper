@@ -389,6 +389,11 @@ if [ "${ROOT_CERT_TOTALNUM}" -gt 1 ]; then
     ROOT_CERT_INDEX="--root-certificate-index ${SIGNING_KEY_INDEX}"
 fi
 
+VERBOSE=""
+if [ "${DEBUG}" -eq 1 ]; then
+    VERBOSE="--verbose"
+fi
+
 # Get a list of *.elf and *.mbn files
 for file in $(ls -1 *.elf *.mbn)
 do
@@ -418,7 +423,7 @@ do
     fi
 
     log "Signing ${file}"
-    ${SECTOOL} secure-image \
+    ${SECTOOL} secure-image ${VERBOSE} \
         --sign ${file} --image-id=${IMAGE_ID} \
         --security-profile ${SECURITY_PROFILE} \
         --anti-rollback-version=${ANTI_ROLLBACK_VERSION} \
@@ -429,7 +434,7 @@ do
         --outfile ${OUT_DIR}/${file}
 
     log "> Verifying root hash of ${OUT_DIR}/${file}"
-    ${SECTOOL} secure-image --verify-root ${ROOT_CERT_HASH} ${OUT_DIR}/${file}
+    ${SECTOOL} secure-image ${VERBOSE} --verify-root ${ROOT_CERT_HASH} ${OUT_DIR}/${file}
     if [ $? -ne 0 ]; then
         echo >&2 "ERROR: Root hash of ${OUT_DIR}/${file} failed verification.  Aborting."
         exit 1
@@ -451,8 +456,7 @@ if [ "${CREATE_SEC_ELF}" -eq 1 ]; then
     fi
 
     log "Creating basic secure boot file (basic_sec.elf)."
-
-    ${SECTOOL} fuse-blower \
+    ${SECTOOL} fuse-blower ${VERBOSE} \
         --security-profile ${SECURITY_PROFILE} \
         --fuse-pk-hash-0=${ROOT_CERT_HASH} \
         --fuse-oem-secure-boot1-pk-hash-in-fuse --fuse-oem-secure-boot1-auth-en \
@@ -467,7 +471,7 @@ if [ "${CREATE_SEC_ELF}" -eq 1 ]; then
         --outfile ${OUT_DIR}/basic_sec.elf
 
     log "> Verifying root hash of ${OUT_DIR}/basic_sec.elf"
-    ${SECTOOL} fuse-blower --verify-root ${ROOT_CERT_HASH} ${OUT_DIR}/basic_sec.elf
+    ${SECTOOL} fuse-blower ${VERBOSE} --verify-root ${ROOT_CERT_HASH} ${OUT_DIR}/basic_sec.elf
     if [ $? -ne 0 ]; then
         echo >&2 "ERROR: Root hash of ${OUT_DIR}/basic_sec.elf failed verification.  Aborting."
         exit 1
@@ -475,8 +479,7 @@ if [ "${CREATE_SEC_ELF}" -eq 1 ]; then
     log "> Verified."
 
     log "Creating complete secure boot file (sec.elf)."
-
-    ${SECTOOL} fuse-blower \
+    ${SECTOOL} fuse-blower ${VERBOSE} \
         --security-profile ${SECURITY_PROFILE} \
         --fuse-pk-hash-0=${ROOT_CERT_HASH} \
         --fuse-oem-secure-boot1-pk-hash-in-fuse --fuse-oem-secure-boot1-auth-en \
@@ -508,7 +511,7 @@ if [ "${CREATE_SEC_ELF}" -eq 1 ]; then
         --outfile ${OUT_DIR}/sec.elf
 
     log "> Verifying root hash of ${OUT_DIR}/sec.elf"
-    ${SECTOOL} fuse-blower --verify-root ${ROOT_CERT_HASH} ${OUT_DIR}/sec.elf
+    ${SECTOOL} fuse-blower ${VERBOSE} --verify-root ${ROOT_CERT_HASH} ${OUT_DIR}/sec.elf
     if [ $? -ne 0 ]; then
         echo >&2 "ERROR: Root hash of ${OUT_DIR}/sec.elf failed verification.  Aborting."
         exit 1
