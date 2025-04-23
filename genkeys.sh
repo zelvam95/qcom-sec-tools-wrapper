@@ -9,7 +9,7 @@ KEY_SIZE=2048
 VALID_KEY_SIZES="2048 4096"
 MIN_OPENSSL_VER="1.1.1"
 USE_OPENSSL1=0
-ROOT_CERT_TOTALNUM=4
+ROOT_CERT_TOTALNUM=1
 ROOT_CERT_SUBJECT="/CN=OEM Root CA ###/O=SecTools/OU=OEM Key/L=San Diego/ST=California/C=US"
 CA_CERT_SUBJECT="/CN=OEM Attestation CA ###/O=SecTools/OU=OEM Key/L=San Diego/ST=California/C=US"
 
@@ -70,12 +70,12 @@ function parse_args()
             ;;
         --root-cert-totalnum)
             case $2 in
-                1 | 2 | 3 | 4)
+                1)
                     ROOT_CERT_TOTALNUM=$2
                     echo "FLAG: ROOT_CERT_TOTALNUM: ${ROOT_CERT_TOTALNUM}"
                     ;;
                 *)
-                    echo >&2 "ERROR: ROOT_CERT_TOTALNUM values can be 1,2,3 or 4: $2.  Aborting."
+                    echo >&2 "ERROR: ROOT_CERT_TOTALNUM values can only be 1.  Aborting."
                     exit 1
                     ;;
             esac

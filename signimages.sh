@@ -10,8 +10,8 @@ KEYS_ROOT_CERT="qpsa_rootca###.cer"
 KEYS_CA_CERT="qpsa_attestca###.cer"
 KEYS_CA_KEY="qpsa_attestca###.key"
 KEYS_ROOTS_HASH="sha384_roots_hash.txt"
-ROOT_CERT_TOTALNUM=4
-SIGNING_KEY_INDEX=3
+ROOT_CERT_TOTALNUM=1
+SIGNING_KEY_INDEX=0
 IMAGE_DIR="."
 OUT_DIR="./signed_images"
 ANTI_ROLLBACK_VERSION=0x0
@@ -147,12 +147,12 @@ function parse_args()
             ;;
         --root-cert-totalnum)
             case $2 in
-                1 | 2 | 3 | 4)
+                1)
                     ROOT_CERT_TOTALNUM=$2
                     echo "FLAG: ROOT_CERT_TOTALNUM: ${ROOT_CERT_TOTALNUM}"
                     ;;
                 *)
-                    echo >&2 "ERROR: ROOT_CERT_TOTALNUM values can be 1,2,3 or 4: $2.  Aborting."
+                    echo >&2 "ERROR: ROOT_CERT_TOTALNUM values can only be 1.  Aborting."
                     exit 1
                     ;;
             esac
