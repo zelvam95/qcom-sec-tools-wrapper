@@ -446,7 +446,7 @@ if [ "${CREATE_SEC_ELF}" -eq 1 ]; then
     ROOT_CERT_COUNT_INDEX=""
     if [ "${ROOT_CERT_TOTALNUM}" -gt 1 ]; then
         root_total_num=$((ROOT_CERT_TOTALNUM - 1))
-        FUSE_ROOT_TOTAL_NUM="--fuse-root-cert-total-num 0x${root_total_num}"
+        FUSE_ROOT_TOTAL_NUM="--fuse-root-cert-total-num=0x${root_total_num}"
         ROOT_CERT_COUNT_INDEX="--root-certificate-index ${SIGNING_KEY_INDEX}"
     fi
 
