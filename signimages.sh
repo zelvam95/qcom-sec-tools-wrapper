@@ -21,6 +21,7 @@ PACKAGE_FILENAME=""
 FUSE_OEM_HW_ID=""
 FUSE_OEM_PRODUCT_ID=""
 FUSE_SEC_KEY_DERIVATION_KEY="0x00"
+UEFI_KEYS_PATH=""
 
 # Flags
 DEBUG=0
@@ -191,6 +192,12 @@ function parse_args()
             shift
             shift
             ;;
+        --uefi-keys-path)
+            UEFI_KEYS_PATH=$2
+            echo "FLAG: UEFI_KEYS_PATH: ${UEFI_KEYS_PATH}"
+            shift
+            shift
+            ;;
         --version)
             echo "Version: ${VERSION}"
             exit 0
@@ -218,6 +225,7 @@ function parse_args()
             echo "--sectoolv2: path to sectoolv2 binary"
             echo "--security-profile: path to *-security-profile.xml"
             echo "--signing-key-index: which CA key index to use for signing (default: ${SIGNING_KEY_INDEX})"
+            echo "--uefi-keys-path: path to UEFI signing keys/certs"
             exit 0
             ;;
         *)
@@ -261,10 +269,17 @@ if [ ! -z "${PACKAGE_FILENAME}" ]; then
     fi
 fi
 
+if [ ! -z "${UEFI_KEYS_PATH}" ]; then
+    log "Check for sbsign command"
+    command -v sbsign >/dev/null 2>&1 || { echo >&2 "Missing sbsign command.  Aborting."; exit 1; }
+    log "> sbsign command found."
+fi
+
 [ -z "${SECTOOL}"  ] && { echo >&2 "ERROR: Missing --sectoolv2 parameter.  Aborting."; exit 1; }
 [ -z "${SECURITY_PROFILE}"  ] && { echo >&2 "ERROR: Missing --security-profile parameter.  Aborting."; exit 1; }
 [ ! -f "${SECURITY_PROFILE}"  ] && { echo >&2 "ERROR: File for security-profile could not be found: ${SECURITY_PROFILE}  Aborting."; exit 1; }
 [ ! -d "${KEYS_PATH}"  ] && { echo >&2 "ERROR: Directory for KEYS_PATH is not found: ${KEYS_PATH}.  Use --keys-path to set.  Aborting."; exit 1; }
+[ ! -z "${UEFI_KEYS_PATH}" ] && [ ! -d "${UEFI_KEYS_PATH}"  ] && { echo >&2 "ERROR: Directory for UEFI_KEYS_PATH is not found: ${UEFI_KEYS_PATH}.  Use --uefi-keys-path to set.  Aborting."; exit 1; }
 
 if [ "${CREATE_SEC_ELF}" -eq 1 ]; then
     if [ -z "${FUSE_OEM_HW_ID}" ]; then
@@ -529,6 +544,56 @@ fi
 if [ "${COPY_FILES}" -eq 1 ] || [ ! -z "${PACKAGE_FILENAME}" ]; then
     log "Copying non- *.elf and *.mbn files to ${OUT_DIR}"
     find . -maxdepth 1 -type f -not -iname "*.elf" -not -iname "*.mbn" -exec cp "{}" "${OUT_DIR}/{}" ';'
+    log "> Done."
+fi
+
+# Enforce UEFI Secure Boot
+if [ ! -z "${UEFI_KEYS_PATH}" ]; then
+    log "UEFI: Processing files to enforce secure boot ..."
+    mkdir -p ./mnt/
+
+    # if missing, copy efi.bin into OUT_DIR for modification
+    if [ ! -f ${OUT_DIR}/efi.bin ]; then
+        debug_log "> Copying efi.bin to ${OUT_DIR} for modification."
+        cp efi.bin ${OUT_DIR}/efi.bin
+    fi
+
+    # modify efi.bin
+    debug_log "> Mounting efi.bin for modification"
+    sudo mount -t vfat -o loop ${OUT_DIR}/efi.bin ./mnt/
+    sudo mkdir -p ./mnt/loader/keys/authkeys
+    log "UEFI: efi.bin: Creating loader.conf with secure-boot-enroll force"
+    echo "secure-boot-enroll force" > loader.conf
+    sudo cp loader.conf ./mnt/loader/
+    rm loader.conf
+    debug_log "> Copy DB.auth and KEK.auth keys to loader/keys/authkeys"
+    sudo cp ${UEFI_KEYS_PATH}/DB.auth ./mnt/loader/keys/authkeys/db.auth
+    sudo cp ${UEFI_KEYS_PATH}/KEK.auth  ${UEFI_KEYS_PATH}/PK.auth ./mnt/loader/keys/authkeys
+    log "UEFI: efi.bin: Signing EFI/BOOT/bootaa64.efi"
+    sudo sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ./mnt/EFI/BOOT/bootaa64.efi --output ./mnt/EFI/BOOT/bootaa64.efi
+    sync
+    debug_log "$(tree ./mnt)"
+    debug_log "> Unmount efi.bin"
+    sudo umount ./mnt
+    sync
+
+    # if missing, copy dtb.bin into OUT_DIR for signing
+    if [ ! -f ${OUT_DIR}/dtb.bin ]; then
+        debug_log "> Copying dtb.bin to ${OUT_DIR} for modification."
+        cp dtb.bin ${OUT_DIR}/dtb.bin
+    fi
+
+    # modify dtb.bin
+    debug_log "> Mounting dtb.bin for modification"
+    sudo mount -t vfat -o loop ${OUT_DIR}/dtb.bin ./mnt/
+    log "UEFI: dtb.bin: Creating combined-dtb.sig"
+    sudo openssl cms -sign -inkey ${UEFI_KEYS_PATH}/DB.key -signer ${UEFI_KEYS_PATH}/DB.crt -binary -in ./mnt/combined-dtb.dtb --out ./mnt/combined-dtb.sig -outform DER
+    sync
+    debug_log "$(tree ./mnt)"
+    debug_log "> Unmount dtb.bin"
+    sudo umount ./mnt
+    sync
+    rmdir ./mnt
     log "> Done."
 fi
 
