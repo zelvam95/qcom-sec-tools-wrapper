@@ -17,7 +17,6 @@ OUT_DIR="./signed_images"
 ANTI_ROLLBACK_VERSION=0x0
 SECTOOL=""
 SECURITY_PROFILE=""
-PACKAGE_FILENAME=""
 FUSE_OEM_HW_ID=""
 FUSE_OEM_PRODUCT_ID=""
 FUSE_SEC_KEY_DERIVATION_KEY="0x00"
@@ -135,12 +134,6 @@ function parse_args()
             shift
             shift
             ;;
-        --package-filename)
-            PACKAGE_FILENAME=$2
-            echo "FLAG: PACKAGE_FILENAME: ${PACKAGE_FILENAME}"
-            shift
-            shift
-            ;;
         --quiet)
             QUIET=1
             echo "FLAG: Quiet mode"
@@ -244,24 +237,6 @@ function log()
         echo "$1"
     fi
 }
-
-if [ ! -z "${PACKAGE_FILENAME}" ]; then
-    log "Check for zip command"
-    command -v zip >/dev/null 2>&1 || { echo >&2 "Missing zip command.  Aborting."; exit 1; }
-    log "> zip command found."
-
-    log "Check for existing zip package: ${PACKAGE_FILENAME}"
-    if [ -f "${PACKAGE_FILENAME}"  ]; then
-        if [ "${FORCE}" -eq 1 ]; then
-            log "> Force flag enabled: overwriting existing zip package!"
-        else
-            echo >&2 "ERROR: Existing zip package Found.  Aborting."
-            exit 1
-        fi
-    else
-        log "> No zip package found.  Proceeding."
-    fi
-fi
 
 if [ ! -z "${UEFI_KEYS_PATH}" ]; then
     log "Check for sbsign command"
@@ -582,11 +557,5 @@ if [ ! -z "${UEFI_KEYS_PATH}" ]; then
     sudo umount ./mnt
     sync
     rmdir ./mnt
-    log "> Done."
-fi
-
-if [ ! -z "${PACKAGE_FILENAME}" ]; then
-    log "Creating zip package of ${OUT_DIR}"
-    zip -r ${PACKAGE_FILENAME} ${OUT_DIR}
     log "> Done."
 fi
