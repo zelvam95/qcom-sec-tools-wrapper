@@ -28,7 +28,6 @@ DEBUG=0
 FORCE=0
 QUIET=0
 CREATE_SEC_ELF=0
-COPY_FILES=0
 
 function parse_args()
 {
@@ -44,11 +43,6 @@ function parse_args()
                 exit 1
             fi
             shift
-            shift
-            ;;
-        --copy-files)
-            COPY_FILES=1
-            echo "FLAG: Copy other files into signing folder: enabled"
             shift
             ;;
         --create-sec-elf)
@@ -539,12 +533,6 @@ if [ "${CREATE_SEC_ELF}" -eq 1 ]; then
         exit 1
     fi
     log "> Verified."
-fi
-
-if [ "${COPY_FILES}" -eq 1 ] || [ ! -z "${PACKAGE_FILENAME}" ]; then
-    log "Copying non- *.elf and *.mbn files to ${OUT_DIR}"
-    find . -maxdepth 1 -type f -not -iname "*.elf" -not -iname "*.mbn" -exec cp "{}" "${OUT_DIR}/{}" ';'
-    log "> Done."
 fi
 
 # Enforce UEFI Secure Boot
