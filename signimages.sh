@@ -12,10 +12,11 @@ KEYS_CA_KEY="qpsa_attestca###.key"
 KEYS_ROOTS_HASH="sha384_roots_hash.txt"
 ROOT_CERT_TOTALNUM=1
 SIGNING_KEY_INDEX=0
-OUT_DIR="./signed_images"
+OUT_DIR="./"
 ANTI_ROLLBACK_VERSION=0x0
 SECTOOL=""
 SECURITY_PROFILE=""
+SCRIPT_PATH=$(dirname "$0")
 
 # Flags
 DEBUG=0
@@ -175,36 +176,89 @@ function log()
     fi
 }
 
+function sign_verify()
+{
+    debug_log "Found $1"
+
+    file="$(basename $1)"
+    filedir="$(dirname "$1")"
+
+    sign_id=$(${SECTOOL} secure-image --inspect $1 | grep "| Software ID:" | cut -d'|' -f3 | trim)
+    if [ -z "${sign_id}" ]; then
+        log "> WARN: $1 does not contain signatures.  Skipping."
+        return 0
+    fi
+
+    # Lookup the IMAGE-ID from mapping
+    IMAGE_ID=$(echo -e "${IMAGE_ID_MAPPING}" | grep "${file}" | cut -d' ' -f2)
+    PIL_SPLIT_FLAG=$(echo -e "${IMAGE_ID_MAPPING}" | grep "${file}" | cut -d' ' -f3)
+    debug_log "> IMAGE_ID: ${IMAGE_ID}"
+    if [ -z "${IMAGE_ID}" ] || [ "${IMAGE_ID}" == "UNKNOWN" ]; then
+        echo >&2 "ERROR: Unable to find IMAGE-ID mapping for ${file}.  Aborting."
+        exit 1
+    fi
+
+    if [ "${IMAGE_ID}" == "SKIP" ]; then
+        log "Skip signing of ${file}"
+        return 0
+    fi
+
+    # Check to make sure the IMAGE_ID is valid for the supplied security-profile
+    if echo "${VALID_IMAGE_ID}" | grep "${IMAGE_ID}" >/dev/null 2>&1; then
+        debug_log "> ${IMAGE_ID} is a valid IMAGE_ID"
+    else
+        echo >&2 "WARN: IMAGE_ID(${IMAGE_ID}) is not valid for this security-profile(${SECURITY_PROFILE}).  Skipping."
+        return 0
+    fi
+
+    PIL_SPLIT=""
+    if [ "${PIL_SPLIT_FLAG}" -eq "1" ]; then
+        debug_log "> Found PIL-SPLIT flag for $1."
+        PIL_SPLIT="--pil-split --pil-split-outdir=${filedir}"
+    fi
+
+    log "Signing $1"
+    ${SECTOOL} secure-image ${VERBOSE} \
+        --sign $1 --image-id=${IMAGE_ID} \
+        --security-profile ${SECURITY_PROFILE} \
+        --anti-rollback-version=${ANTI_ROLLBACK_VERSION} \
+        --signing-mode LOCAL \
+        ${PIL_SPLIT} \
+        ${ROOT_CERT_INDEX} \
+        --root-certificate ${ROOT_CERT_LIST} \
+        --ca-certificate=${KEYS_CA_CERT_FILENAME} --ca-key=${KEYS_CA_KEY_FILENAME} \
+        --outfile $1
+
+    log "> Verifying root hash of $1"
+    ${SECTOOL} secure-image ${VERBOSE} --verify-root ${ROOT_CERT_HASH} $1
+    if [ $? -ne 0 ]; then
+        echo >&2 "ERROR: Root hash of $1 failed verification.  Aborting."
+        exit 1
+    fi
+
+    # verify pil-split file
+    if [ "${PIL_SPLIT_FLAG}" -eq "1" ]; then
+        mdt_file="${filedir}/${file%.*}.mdt"
+        log "> Verifying root hash of ${mdt_file}"
+        ${SECTOOL} secure-image ${VERBOSE} --verify-root ${ROOT_CERT_HASH} ${mdt_file}
+        if [ $? -ne 0 ]; then
+            echo >&2 "ERROR: Root hash of ${mdt_file} failed verification.  Aborting."
+            exit 1
+        fi
+    fi
+
+    log "> Verified."
+}
+
 [ -z "${SECTOOL}"  ] && { echo >&2 "ERROR: Missing --sectoolv2 parameter.  Aborting."; exit 1; }
 [ -z "${SECURITY_PROFILE}"  ] && { echo >&2 "ERROR: Missing --security-profile parameter.  Aborting."; exit 1; }
 [ ! -f "${SECURITY_PROFILE}"  ] && { echo >&2 "ERROR: File for security-profile could not be found: ${SECURITY_PROFILE}  Aborting."; exit 1; }
 [ ! -d "${KEYS_PATH}"  ] && { echo >&2 "ERROR: Directory for KEYS_PATH is not found: ${KEYS_PATH}.  Use --keys-path to set.  Aborting."; exit 1; }
+[ ! -d "${OUT_DIR}" ] && { echo >&2 "ERROR: OUT_DIR not found: ${OUT_DIR}.  Aborting."; exit 1; }
 
 if [ "${SIGNING_KEY_INDEX}" -ge "${ROOT_CERT_TOTALNUM}" ]; then
         echo >&2 "ERROR: --signing-key-index(${SIGNING_KEY_INDEX}) cannot be equal or greater to --root-cert-totalnum(${ROOT_CERT_TOTALNUM}).  Aborting."
         exit 1
-fi
-
-log "Check for ${OUT_DIR} directory"
-if [ ! -d "${OUT_DIR}" ]; then
-    log "> Creating ${OUT_DIR} directory"
-    mkdir ${OUT_DIR}
-else
-    log "> Found ${OUT_DIR} directory"
-fi
-
-log "Checking for existing files in: ${OUT_DIR}"
-FILES_FOUND=0
-ls ${OUT_DIR}/* >/dev/null 2>&1 && FILES_FOUND=1
-if [ "${FILES_FOUND}" -eq 1 ]; then
-    if [ "${FORCE}" -eq 1 ]; then
-        log "> Force flag enabled: overwriting existing images!"
-    else
-        echo >&2 "ERROR: Existing files found.  Use --force to bypass this check.  Aborting."
-        exit 1
-    fi
-else
-    log "> No files found in ${OUT_DIR}.  Proceeding."
 fi
 
 if [ ! -f "${KEYS_PATH}/${KEYS_ROOTS_HASH}" ]; then
@@ -238,27 +292,39 @@ done
 IFS="${OIFS}"
 log "> Done"
 
+# <filename> <image_id> <pil-split-flag>
 IMAGE_ID_MAPPING="\
-aop.mbn AOP${newline}\
-cpucp.elf CPUCP${newline}\
-devcfg.mbn TZ-DEVCFG${newline}\
-hypvm.mbn QHEE${newline}\
-imagefv.elf UEFIFV${newline}\
-multi_image.mbn OEM-MISC${newline}\
-prog_firehose_ddr.elf DEVICE-PROGRAMMER${newline}\
-prog_firehose_lite.elf DEVICE-PROGRAMMER${newline}\
-qupv3fw.elf QUPV3${newline}\
-sec.elf SEC-ELF${newline}\
-shrm.elf SHRM${newline}\
-tz.mbn TZ${newline}\
-uefi.elf UEFI${newline}\
-uefi_sec.mbn TZ-APP-OEM${newline}\
-xbl_config.elf XBL-CONFIG${newline}\
-xbl_config_gunyah.elf XBL-CONFIG${newline}\
-xbl_config_kvm.elf XBL-CONFIG${newline}\
-xbl.elf XBL${newline}\
-XblRamdump.elf XBL-RAM-DUMP${newline}\
-DigestsToSign.bin.mbn VIP${newline}\
+a660_zap.mbn GPU-MICRO-CODE 1 ${newline}\
+adsp.mbn ADSP 1 ${newline}\
+aop.mbn AOP 0 ${newline}\
+cdsp.mbn CDSP 1 ${newline}\
+cpucp.elf CPUCP 0 ${newline}\
+devcfg.mbn TZ-DEVCFG 0 ${newline}\
+hypvm.mbn QHEE 0 ${newline}\
+imagefv.elf UEFIFV 0 ${newline}\
+ipa_fws.mbn IPA-FW 1 ${newline}\
+loadalgota64.mbn TZ-APP-OEM 1 ${newline}\
+msbtfw11.mbn SKIP 0 ${newline}\
+multi_image.mbn OEM-MISC 0 ${newline}\
+prog_firehose_ddr.elf DEVICE-PROGRAMMER 0 ${newline}\
+prog_firehose_lite.elf DEVICE-PROGRAMMER 0 ${newline}\
+qupv3fw.elf QUPV3 0 ${newline}\
+sec.elf SEC-ELF 0 ${newline}\
+shrm.elf SHRM 0 ${newline}\
+tz.mbn TZ 0 ${newline}\
+uefi.elf UEFI 0 ${newline}\
+uefi_sec.mbn TZ-APP-OEM 0 ${newline}\
+vpu20_1v.mbn VENUS-FW 0 ${newline}\
+vpu30_4v.mbn VENUS-FW 0 ${newline}\
+vpu30_4v_16mb.mbn VENUS-FW 0 ${newline}\
+wpss.mbn WPSS 1 ${newline}\
+xbl_config.elf XBL-CONFIG 0 ${newline}\
+xbl_config_gunyah.elf XBL-CONFIG 0 ${newline}\
+xbl_config_kvm.elf XBL-CONFIG 0 ${newline}\
+xbl.elf XBL 0 ${newline}\
+XblRamdump.elf XBL-RAM-DUMP 0 ${newline}\
+DigestsToSign.bin.mbn VIP 0 ${newline}\
+FD02C9DA-306C-48C7-A49C-BBD827AE86EE.mbn TZ-APP-OEM 0 ${newline}\
 "
 
 # Create a list of root certificates
@@ -300,52 +366,35 @@ if [ "${DEBUG}" -eq 1 ]; then
     VERBOSE="--verbose"
 fi
 
-# Get a list of *.elf and *.mbn files
-for file in $(ls -1 *.elf *.mbn)
+log "Searching for MDT files without matching MBN files."
+file_list=$(find ${OUT_DIR} -iname "*.mdt")
+mbn_create_list=""
+for file in ${file_list}
 do
-    debug_log "Found ${file}"
-
-    # Lookup the IMAGE-ID from mapping
-    IMAGE_ID=$(echo -e "${IMAGE_ID_MAPPING}" | grep "${file}" | cut -d' ' -f2)
-    debug_log "> IMAGE_ID mapping: ${IMAGE_ID}"
-    if [ -z "${IMAGE_ID}" ] || [ "${IMAGE_ID}" == "UNKNOWN" ]; then
-        echo >&2 "ERROR: Unable to find IMAGE-ID mapping for ${file}.  Aborting."
-        exit 1
-    fi
-    debug_log "> IMAGE_ID: ${IMAGE_ID}"
-
-    if [ "${IMAGE_ID}" == "SKIP" ]; then
-        log "Skip signing of ${file}"
-        cp ${file} ${OUT_DIR}
-        continue
-    fi
-
-    # Check to make sure the IMAGE_ID is valid for the supplied security-profile
-    if echo "${VALID_IMAGE_ID}" | grep "${IMAGE_ID}" >/dev/null 2>&1; then
-        debug_log "> ${IMAGE_ID} is a valid IMAGE_ID"
+    mbn_file=$(basename "${file%.*}.mbn")
+    mbn_base=$(dirname "${file}")
+    debug_log "> Checking for ${mbn_base}/${mbn_file}"
+    if [ ! -f "${mbn_base}/${mbn_file}" ]; then
+        log "> ${mbn_base}/${mbn_file} not found!  Creating from MDT fragments."
+        ${SCRIPT_PATH}/bin/pil-squasher "${mbn_base}/${mbn_file}" ${file}
+	mbn_create_list+=" ${mbn_base}/${mbn_file}"
     else
-        echo >&2 "ERROR: IMAGE_ID(${IMAGE_ID}) is not valid for this security-profile(${SECURITY_PROFILE}).  Aborting."
-        exit 1
+        debug_log "> Found ${mbn_base}/${mbn_file}"
     fi
+done
 
-    log "Signing ${file}"
-    ${SECTOOL} secure-image ${VERBOSE} \
-        --sign ${file} --image-id=${IMAGE_ID} \
-        --security-profile ${SECURITY_PROFILE} \
-        --anti-rollback-version=${ANTI_ROLLBACK_VERSION} \
-        --signing-mode LOCAL \
-        ${ROOT_CERT_INDEX} \
-        --root-certificate ${ROOT_CERT_LIST} \
-        --ca-certificate=${KEYS_CA_CERT_FILENAME} --ca-key=${KEYS_CA_KEY_FILENAME} \
-        --outfile ${OUT_DIR}/${file}
+log "Searching for MBN files to sign."
+file_list=$(find ${OUT_DIR} -iname "*.mbn")
+for file in ${file_list}
+do
+    sign_verify "${file}"
+done
 
-    log "> Verifying root hash of ${OUT_DIR}/${file}"
-    ${SECTOOL} secure-image ${VERBOSE} --verify-root ${ROOT_CERT_HASH} ${OUT_DIR}/${file}
-    if [ $? -ne 0 ]; then
-        echo >&2 "ERROR: Root hash of ${OUT_DIR}/${file} failed verification.  Aborting."
-        exit 1
-    fi
-    log "> Verified."
+log "Searching for ELF files to sign."
+file_list=$(find ${OUT_DIR} -iname "*.elf")
+for file in ${file_list}
+do
+    sign_verify ${file} 0
 done
 
 log "Image signing complete."
