@@ -12,7 +12,7 @@ KEYS_CA_KEY="qpsa_attestca###.key"
 KEYS_ROOTS_HASH="sha384_roots_hash.txt"
 ROOT_CERT_TOTALNUM=1
 SIGNING_KEY_INDEX=0
-OUT_DIR="./signed_images"
+OUT_DIR="./"
 ANTI_ROLLBACK_VERSION=0x0
 SECTOOL=""
 SECURITY_PROFILE=""
@@ -186,7 +186,7 @@ function parse_args()
             echo "Usage parameters:"
             echo "--anti-rollback-version: hex value supplied to 'sectoolsv2 secure-image' --anti-rollback-version param"
             echo "  (default: ${ANTI_ROLLBACK_VERSION})"
-            echo "--create-sec-elf: generates a sec.elf file in the OUT_DIR.  Requires --oem-id and --oem-product-id"
+            echo "--create-sec-elf: generates a sec.elf file in the OUT_DIR.  Requires --fuse-oem-hw-id and --fuse-oem-product-id"
             echo "--debug: enables debug logging"
             echo "--force: force overwrite files (dangerous!)"
             echo "--fuse-oem-hw-id: hex value passed to 'sectoolsv2 fuse-blower' --fuse-oem-hw-id param"
@@ -198,7 +198,6 @@ function parse_args()
             echo "--keys-ca-key-filename: ca key filename (default: ${KEYS_CA_KEY})"
             echo "--keys-root-hash-filename: roots hash filename (default: ${KEYS_ROOTS_HASH})"
             echo "--out-dir: output directory for signed images (default: ${OUT_DIR})"
-            echo "--package-filename: output filename, if set will create a .zip package of all standard files + signed images for distribution"
             echo "--quiet: disable normal logging"
             echo "--root-cert-totalnum: set # of root certs to use. 1-4 allowed (default: 4)"
             echo "--sectoolv2: path to sectoolv2 binary"
@@ -242,6 +241,9 @@ fi
 [ ! -d "${KEYS_PATH}"  ] && { echo >&2 "ERROR: Directory for KEYS_PATH is not found: ${KEYS_PATH}.  Use --keys-path to set.  Aborting."; exit 1; }
 [ ! -z "${UEFI_KEYS_PATH}" ] && [ ! -d "${UEFI_KEYS_PATH}"  ] && { echo >&2 "ERROR: Directory for UEFI_KEYS_PATH is not found: ${UEFI_KEYS_PATH}.  Use --uefi-keys-path to set.  Aborting."; exit 1; }
 
+# make sure either --create-sec-elf or --uefi-keys-path was used
+[ -z "${UEFI_KEYS_PATH}" ] && [ "${CREATE_SEC_ELF}" -ne 1 ] && { echo >&2 "ERROR: Either --create-sec-elf and/or --uefi-keys-path must be used.  Aborting."; exit 1; }
+
 if [ "${CREATE_SEC_ELF}" -eq 1 ]; then
     if [ -z "${FUSE_OEM_HW_ID}" ]; then
         echo >&2 "ERROR: --fuse-oem-hw-id must be set when --create-sec-elf is enabled.  Aborting."
@@ -270,20 +272,6 @@ else
     log "> Found ${OUT_DIR} directory"
 fi
 
-log "Checking for existing files in: ${OUT_DIR}"
-FILES_FOUND=0
-ls ${OUT_DIR}/* >/dev/null 2>&1 && FILES_FOUND=1
-if [ "${FILES_FOUND}" -eq 1 ]; then
-    if [ "${FORCE}" -eq 1 ]; then
-        log "> Force flag enabled: overwriting existing images!"
-    else
-        echo >&2 "ERROR: Existing files found.  Use --force to bypass this check.  Aborting."
-        exit 1
-    fi
-else
-    log "> No files found in ${OUT_DIR}.  Proceeding."
-fi
-
 if [ ! -f "${KEYS_PATH}/${KEYS_ROOTS_HASH}" ]; then
     echo >&2 "ERROR: Cannot find roots hash file: ${KEYS_PATH}/${KEYS_ROOTS_HASH}.  Aborting."
     exit 1
@@ -294,49 +282,6 @@ log "> Done"
 
 # Define a newline
 newline=$'\n'
-
-# Get list of valid image IDs from the security profile
-log "Creating a list of valid IMAGE-IDs"
-OIFS="${IFS}"
-IFS=${newline}
-VALID_IMAGE_ID=""
-SKIP_FIRST=0
-for line in $(${SECTOOL} secure-image --available-image-ids --security-profile ${SECURITY_PROFILE})
-do
-    if [ "${SKIP_FIRST}" -eq 0 ]; then
-        SKIP_FIRST=1
-        continue
-    fi
-    NEW_ID=$(echo "${line}" | cut -c4-)
-    debug_log "> Adding: ${NEW_ID}"
-    VALID_IMAGE_ID+="${NEW_ID}"
-    VALID_IMAGE_ID+=$'\n'
-done
-IFS="${OIFS}"
-log "> Done"
-
-IMAGE_ID_MAPPING="\
-aop.mbn AOP${newline}\
-cpucp.elf CPUCP${newline}\
-devcfg.mbn TZ-DEVCFG${newline}\
-hypvm.mbn QHEE${newline}\
-imagefv.elf UEFIFV${newline}\
-multi_image.mbn OEM-MISC${newline}\
-prog_firehose_ddr.elf DEVICE-PROGRAMMER${newline}\
-prog_firehose_lite.elf DEVICE-PROGRAMMER${newline}\
-qupv3fw.elf QUPV3${newline}\
-sec.elf SEC-ELF${newline}\
-shrm.elf SHRM${newline}\
-tz.mbn TZ${newline}\
-uefi.elf UEFI${newline}\
-uefi_sec.mbn TZ-APP-OEM${newline}\
-xbl_config.elf XBL-CONFIG${newline}\
-xbl_config_gunyah.elf XBL-CONFIG${newline}\
-xbl_config_kvm.elf XBL-CONFIG${newline}\
-xbl.elf XBL${newline}\
-XblRamdump.elf XBL-RAM-DUMP${newline}\
-DigestsToSign.bin.mbn VIP${newline}\
-"
 
 # Create a list of root certificates
 ROOT_CERT_LIST=""
@@ -376,56 +321,6 @@ VERBOSE=""
 if [ "${DEBUG}" -eq 1 ]; then
     VERBOSE="--verbose"
 fi
-
-# Get a list of *.elf and *.mbn files
-for file in $(ls -1 *.elf *.mbn)
-do
-    debug_log "Found ${file}"
-
-    # Lookup the IMAGE-ID from mapping
-    IMAGE_ID=$(echo -e "${IMAGE_ID_MAPPING}" | grep "${file}" | cut -d' ' -f2)
-    debug_log "> IMAGE_ID mapping: ${IMAGE_ID}"
-    if [ -z "${IMAGE_ID}" ] || [ "${IMAGE_ID}" == "UNKNOWN" ]; then
-        echo >&2 "ERROR: Unable to find IMAGE-ID mapping for ${file}.  Aborting."
-        exit 1
-    fi
-    debug_log "> IMAGE_ID: ${IMAGE_ID}"
-
-    if [ "${IMAGE_ID}" == "SKIP" ]; then
-        log "Skip signing of ${file}"
-        cp ${file} ${OUT_DIR}
-        continue
-    fi
-
-    # Check to make sure the IMAGE_ID is valid for the supplied security-profile
-    if echo "${VALID_IMAGE_ID}" | grep "${IMAGE_ID}" >/dev/null 2>&1; then
-        debug_log "> ${IMAGE_ID} is a valid IMAGE_ID"
-    else
-        echo >&2 "ERROR: IMAGE_ID(${IMAGE_ID}) is not valid for this security-profile(${SECURITY_PROFILE}).  Aborting."
-        exit 1
-    fi
-
-    log "Signing ${file}"
-    ${SECTOOL} secure-image ${VERBOSE} \
-        --sign ${file} --image-id=${IMAGE_ID} \
-        --security-profile ${SECURITY_PROFILE} \
-        --anti-rollback-version=${ANTI_ROLLBACK_VERSION} \
-        --signing-mode LOCAL \
-        ${ROOT_CERT_INDEX} \
-        --root-certificate ${ROOT_CERT_LIST} \
-        --ca-certificate=${KEYS_CA_CERT_FILENAME} --ca-key=${KEYS_CA_KEY_FILENAME} \
-        --outfile ${OUT_DIR}/${file}
-
-    log "> Verifying root hash of ${OUT_DIR}/${file}"
-    ${SECTOOL} secure-image ${VERBOSE} --verify-root ${ROOT_CERT_HASH} ${OUT_DIR}/${file}
-    if [ $? -ne 0 ]; then
-        echo >&2 "ERROR: Root hash of ${OUT_DIR}/${file} failed verification.  Aborting."
-        exit 1
-    fi
-    log "> Verified."
-done
-
-log "Image signing complete."
 
 # Create basic_sec.elf and sec.elf
 # TOOD: Handle more than 1 root key
