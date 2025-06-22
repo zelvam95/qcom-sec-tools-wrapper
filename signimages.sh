@@ -12,7 +12,6 @@ KEYS_CA_KEY="qpsa_attestca###.key"
 KEYS_ROOTS_HASH="sha384_roots_hash.txt"
 ROOT_CERT_TOTALNUM=1
 SIGNING_KEY_INDEX=0
-IMAGE_DIR="."
 OUT_DIR="./signed_images"
 ANTI_ROLLBACK_VERSION=0x0
 SECTOOL=""
@@ -122,12 +121,6 @@ function parse_args()
             shift
             shift
             ;;
-        --image-dir)
-            IMAGE_DIR=$2
-            echo "FLAG: IMAGE_DIR: ${IMAGE_DIR}"
-            shift
-            shift
-            ;;
         --out-dir)
             OUT_DIR=$2
             echo "FLAG: OUT_DIR: ${OUT_DIR}"
@@ -204,7 +197,6 @@ function parse_args()
             echo "--keys-ca-cert-filename: ca cert filename (default: ${KEYS_CA_CERT})"
             echo "--keys-ca-key-filename: ca key filename (default: ${KEYS_CA_KEY})"
             echo "--keys-root-hash-filename: roots hash filename (default: ${KEYS_ROOTS_HASH})"
-            echo "--image-dir: in file location for images to be signed: *.elf and *.mbn (default: ${IMAGE_DIR})"
             echo "--out-dir: output directory for signed images (default: ${OUT_DIR})"
             echo "--package-filename: output filename, if set will create a .zip package of all standard files + signed images for distribution"
             echo "--quiet: disable normal logging"
