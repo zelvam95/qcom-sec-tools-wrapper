@@ -183,7 +183,7 @@ function sign_verify()
     file="$(basename $1)"
     filedir="$(dirname "$1")"
 
-    sign_id=$(${SECTOOL} secure-image --inspect $1 | grep "| Software ID:" | cut -d'|' -f3 | trim)
+    sign_id=$(${SECTOOL} secure-image --inspect $1 | grep "| Software ID:" | cut -d'|' -f3)
     if [ -z "${sign_id}" ]; then
         log "> WARN: $1 does not contain signatures.  Skipping."
         return 0
