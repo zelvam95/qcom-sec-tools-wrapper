@@ -402,11 +402,15 @@ if [ ! -z "${UEFI_KEYS_PATH}" ]; then
     log "UEFI: Processing files to enforce secure boot ..."
     mkdir -p ./mnt/
 
-    # if missing, copy efi.bin into OUT_DIR for modification
-    if [ ! -f ${OUT_DIR}/efi.bin ]; then
-        debug_log "> Copying efi.bin to ${OUT_DIR} for modification."
-        cp efi.bin ${OUT_DIR}/efi.bin
+    # if .orig is missing, copy efi.bin to efi.bin.orig
+    if [ ! -f efi.bin.orig ]; then
+        debug_log "> Copying efi.bin to efi.bin.orig as a backup."
+        cp efi.bin efi.bin.orig
     fi
+
+    # always copy efi.bin.orig over the existing efi.bin so we have a clean start
+    debug_log "> Resetting efi.bin to the original backup."
+    cp efi.bin.orig ${OUT_DIR}/efi.bin
 
     # modify efi.bin
     debug_log "> Mounting efi.bin for modification"
@@ -427,11 +431,15 @@ if [ ! -z "${UEFI_KEYS_PATH}" ]; then
     sudo umount ./mnt
     sync
 
-    # if missing, copy dtb.bin into OUT_DIR for signing
-    if [ ! -f ${OUT_DIR}/dtb.bin ]; then
-        debug_log "> Copying dtb.bin to ${OUT_DIR} for modification."
-        cp dtb.bin ${OUT_DIR}/dtb.bin
+    # if .orig is missing, copy dtb.bin to dtb.bin.orig
+    if [ ! -f dtb.bin.orig ]; then
+        debug_log "> Copying dtb.bin to dtb.bin.orig as a backup."
+        cp dtb.bin dtb.bin.orig
     fi
+
+    # always copy dtb.bin.orig over the existing dtb.bin so we have a clean start
+    debug_log "> Resetting dtb.bin to the original backup."
+    cp dtb.bin.orig ${OUT_DIR}/dtb.bin
 
     # modify dtb.bin
     debug_log "> Mounting dtb.bin for modification"
