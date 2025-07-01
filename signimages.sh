@@ -204,10 +204,10 @@ function sign_verify()
         return 0
     fi
 
-    PIL_SPLIT=""
     if [ "${PIL_SPLIT_FLAG}" -eq "1" ]; then
-        debug_log "> Found PIL-SPLIT flag for $1."
-        PIL_SPLIT="--pil-split --pil-split-outdir=${filedir}"
+        debug_log "> Found PIL-SPLIT flag for $1.  Cleaning up fragments."
+        rm ${filedir}/${file%.*}.mdt
+        rm ${filedir}/${file%.*}.b*
     fi
 
     log "Signing $1"
@@ -216,11 +216,14 @@ function sign_verify()
         --security-profile ${SECURITY_PROFILE} \
         --anti-rollback-version=${ANTI_ROLLBACK_VERSION} \
         --signing-mode LOCAL \
-        ${PIL_SPLIT} \
         ${ROOT_CERT_INDEX} \
         --root-certificate ${ROOT_CERT_LIST} \
         --ca-certificate=${KEYS_CA_CERT_FILENAME} --ca-key=${KEYS_CA_KEY_FILENAME} \
         --outfile $1
+
+    if [ "${PIL_SPLIT_FLAG}" -eq "1" ]; then
+        ${SCRIPT_PATH}/bin/pil-splitter $1 ${filedir}/${file%.*}.mdt
+    fi
 
     log "> Verifying root hash of $1"
     ${SECTOOL} secure-image ${VERBOSE} --verify-root ${ROOT_CERT_HASH} $1
