@@ -413,44 +413,23 @@ if [ ! -z "${UEFI_KEYS_PATH}" ]; then
     cp efi.bin.orig ${OUT_DIR}/efi.bin
 
     # modify efi.bin
-    debug_log "> Mounting efi.bin for modification"
+    debug_log "> Mounting efi.bin for UEFI Secure Boot Enroll modification"
     sudo mount -t vfat -o loop ${OUT_DIR}/efi.bin ./mnt/
-    sudo mkdir -p ./mnt/loader/keys/authkeys
+
+    sudo mkdir -p ./mnt/loader/keys/auto
     log "UEFI: efi.bin: Creating loader.conf with secure-boot-enroll force"
     echo "secure-boot-enroll force" > loader.conf
     sudo cp loader.conf ./mnt/loader/
     rm loader.conf
-    debug_log "> Copy DB.auth and KEK.auth keys to loader/keys/authkeys"
-    sudo cp ${UEFI_KEYS_PATH}/DB.auth ./mnt/loader/keys/authkeys/db.auth
-    sudo cp ${UEFI_KEYS_PATH}/KEK.auth  ${UEFI_KEYS_PATH}/PK.auth ./mnt/loader/keys/authkeys
-    log "UEFI: efi.bin: Signing EFI/BOOT/bootaa64.efi"
-    sudo sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ./mnt/EFI/BOOT/bootaa64.efi --output ./mnt/EFI/BOOT/bootaa64.efi
-    sync
+    debug_log "> Copy DB.auth and KEK.auth keys to loader/keys/auto"
+    sudo cp ${UEFI_KEYS_PATH}/DB.auth ./mnt/loader/keys/auto/db.auth
+    sudo cp ${UEFI_KEYS_PATH}/KEK.auth ./mnt/loader/keys/auto
+    sudo cp ${UEFI_KEYS_PATH}/PK.auth ./mnt/loader/keys/auto
     debug_log "$(tree ./mnt)"
     debug_log "> Unmount efi.bin"
     sudo umount ./mnt
     sync
 
-    # if .orig is missing, copy dtb.bin to dtb.bin.orig
-    if [ ! -f dtb.bin.orig ]; then
-        debug_log "> Copying dtb.bin to dtb.bin.orig as a backup."
-        cp dtb.bin dtb.bin.orig
-    fi
-
-    # always copy dtb.bin.orig over the existing dtb.bin so we have a clean start
-    debug_log "> Resetting dtb.bin to the original backup."
-    cp dtb.bin.orig ${OUT_DIR}/dtb.bin
-
-    # modify dtb.bin
-    debug_log "> Mounting dtb.bin for modification"
-    sudo mount -t vfat -o loop ${OUT_DIR}/dtb.bin ./mnt/
-    log "UEFI: dtb.bin: Creating combined-dtb.sig"
-    sudo openssl cms -sign -inkey ${UEFI_KEYS_PATH}/DB.key -signer ${UEFI_KEYS_PATH}/DB.crt -binary -in ./mnt/combined-dtb.dtb --out ./mnt/combined-dtb.sig -outform DER
-    sync
-    debug_log "$(tree ./mnt)"
-    debug_log "> Unmount dtb.bin"
-    sudo umount ./mnt
-    sync
     rmdir ./mnt
     log "> Done."
 fi
