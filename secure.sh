@@ -27,7 +27,7 @@ FORCE=0
 QUIET=0
 CREATE_SEC_ELF=0
 
-function parse_args()
+parse_args()
 {
     while [ $# -gt 0 ]
     do
@@ -215,14 +215,14 @@ function parse_args()
 
 parse_args "$@"
 
-function debug_log()
+debug_log()
 {
     if [ "${DEBUG}" -eq 1 ]; then
         echo "DEBUG: $1"
     fi
 }
 
-function log()
+log()
 {
     if [ "${QUIET}" -ne 1 ]; then
         echo "$1"
@@ -280,9 +280,6 @@ log "Reading the sha384 hash of the root certificate(s)."
 ROOT_CERT_HASH="0x$(cat ${KEYS_PATH}/${KEYS_ROOTS_HASH} | cut -d' ' -f2)"
 log "> Done"
 
-# Define a newline
-newline=$'\n'
-
 # Create a list of root certificates
 ROOT_CERT_LIST=""
 key=0
@@ -294,7 +291,7 @@ do
         echo >&2 "ERROR: Cannot find root certificate: ${KEY_FILENAME}.  Aborting."
         exit 1
     fi
-    ROOT_CERT_LIST+=" ${KEY_FILENAME}"
+    ROOT_CERT_LIST="${ROOT_CERT_LIST} ${KEY_FILENAME}"
     # increment key counter
     key=$((key + 1))
 done
