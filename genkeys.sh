@@ -19,7 +19,7 @@ FORCE=0
 QUIET=0
 USE_ECSDA=1
 
-function parse_args()
+parse_args()
 {
     while [ $# -gt 0 ]
     do
@@ -43,7 +43,7 @@ function parse_args()
         --key-size)
             found=0
             for value in ${VALID_KEY_SIZES}; do
-                if [ "$2" == "${value}" ]; then
+                if [ "$2" = "${value}" ]; then
                     KEY_SIZE=$2
                     echo "FLAG: KEY_SIZE=${KEY_SIZE}"
                     found=1
@@ -110,21 +110,21 @@ function parse_args()
 
 parse_args "$@"
 
-function debug_log()
+debug_log()
 {
     if [ "${DEBUG}" -eq 1 ]; then
         echo "DEBUG: $1"
     fi
 }
 
-function log()
+log()
 {
     if [ "${QUIET}" -ne 1 ]; then
         echo "$1"
     fi
 }
 
-function version_greater_equal()
+version_greater_equal()
 {
     printf '%s\n%s\n' "$2" "$1" | sort --check=quiet --version-sort
 }
