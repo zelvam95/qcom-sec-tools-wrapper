@@ -22,7 +22,7 @@ SCRIPT_PATH=$(dirname "$0")
 DEBUG=0
 QUIET=0
 
-function parse_args()
+parse_args()
 {
     while [ $# -gt 0 ]
     do
@@ -155,21 +155,21 @@ function parse_args()
 
 parse_args "$@"
 
-function debug_log()
+debug_log()
 {
     if [ "${DEBUG}" -eq 1 ]; then
         echo "DEBUG: $1"
     fi
 }
 
-function log()
+log()
 {
     if [ "${QUIET}" -ne 1 ]; then
         echo "$1"
     fi
 }
 
-function sign_verify()
+sign_verify()
 {
     debug_log "Found $1"
 
@@ -183,15 +183,15 @@ function sign_verify()
     fi
 
     # Lookup the IMAGE-ID from mapping
-    IMAGE_ID=$(echo -e "${IMAGE_ID_MAPPING}" | grep "${file}" | cut -d' ' -f2)
-    PIL_SPLIT_FLAG=$(echo -e "${IMAGE_ID_MAPPING}" | grep "${file}" | cut -d' ' -f3)
+    IMAGE_ID=$(echo "${IMAGE_ID_MAPPING}" | grep "${file}" | cut -d' ' -f2)
+    PIL_SPLIT_FLAG=$(echo "${IMAGE_ID_MAPPING}" | grep "${file}" | cut -d' ' -f3)
     debug_log "> IMAGE_ID: ${IMAGE_ID}"
-    if [ -z "${IMAGE_ID}" ] || [ "${IMAGE_ID}" == "UNKNOWN" ]; then
+    if [ -z "${IMAGE_ID}" ] || [ "${IMAGE_ID}" = "UNKNOWN" ]; then
         echo >&2 "ERROR: Unable to find IMAGE-ID mapping for ${file}.  Aborting."
         exit 1
     fi
 
-    if [ "${IMAGE_ID}" == "SKIP" ]; then
+    if [ "${IMAGE_ID}" = "SKIP" ]; then
         log "Skip signing of ${file}"
         return 0
     fi
@@ -266,7 +266,8 @@ ROOT_CERT_HASH="0x$(cat ${KEYS_PATH}/${KEYS_ROOTS_HASH} | cut -d' ' -f2)"
 log "> Done"
 
 # Define a newline
-newline=$'\n'
+newline="
+"
 
 # Get list of valid image IDs from the security profile
 log "Creating a list of valid IMAGE-IDs"
@@ -282,8 +283,7 @@ do
     fi
     NEW_ID=$(echo "${line}" | cut -c4-)
     debug_log "> Adding: ${NEW_ID}"
-    VALID_IMAGE_ID+="${NEW_ID}"
-    VALID_IMAGE_ID+=$'\n'
+    VALID_IMAGE_ID="${VALID_IMAGE_ID}${NEW_ID}${newline}"
 done
 IFS="${OIFS}"
 log "> Done"
@@ -334,7 +334,7 @@ do
         echo >&2 "ERROR: Cannot find root certificate: ${KEY_FILENAME}.  Aborting."
         exit 1
     fi
-    ROOT_CERT_LIST+=" ${KEY_FILENAME}"
+    ROOT_CERT_LIST="${ROOT_CERT_LIST} ${KEY_FILENAME}"
     # increment key counter
     key=$((key + 1))
 done
@@ -373,7 +373,7 @@ do
     if [ ! -f "${mbn_base}/${mbn_file}" ]; then
         log "> ${mbn_base}/${mbn_file} not found!  Creating from MDT fragments."
         ${SCRIPT_PATH}/bin/pil-squasher "${mbn_base}/${mbn_file}" ${file}
-	mbn_create_list+=" ${mbn_base}/${mbn_file}"
+	mbn_create_list="${mbn_create_list} ${mbn_base}/${mbn_file}"
     else
         debug_log "> Found ${mbn_base}/${mbn_file}"
     fi
