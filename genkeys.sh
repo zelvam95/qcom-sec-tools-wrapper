@@ -4,6 +4,7 @@
 set -e
 
 # Settings
+SCRIPT_DIR="$(dirname "$(realpath -- "$0")")"
 OUT_DIR="OEM-KEYS"
 KEY_SIZE=2048
 VALID_KEY_SIZES="2048 4096"
@@ -12,6 +13,12 @@ USE_OPENSSL1=0
 ROOT_CERT_TOTALNUM=1
 ROOT_CERT_SUBJECT="/CN=OEM Root CA ###/O=SecTools/OU=OEM Key/L=San Diego/ST=California/C=US"
 CA_CERT_SUBJECT="/CN=OEM Attestation CA ###/O=SecTools/OU=OEM Key/L=San Diego/ST=California/C=US"
+FMP_CA_DIR="demoCA"
+FMP_ROOT_CERT_SUBJECT="/CN=OEM Root CA/O=FMP/OU=OEM Key/L=San Diego/ST=California/C=US"
+FMP_CA_CERT_SUBJECT="/CN=OEM Intermediate CA/O=FMP/OU=OEM Key/L=San Diego/ST=California/C=US"
+FMP_USER_CERT_SUBJECT="/CN=OEM User/O=FMP/OU=OEM Key/L=San Diego/ST=California/C=US"
+FMP_KEY_SIZE=2048
+FMP_KEY_PASSWORD=""
 
 # Flags
 DEBUG=0
@@ -33,6 +40,30 @@ parse_args()
         --debug)
             DEBUG=1
             echo "FLAG: Debug: enabled"
+            shift
+            ;;
+        --fmp-ca-cert-subject)
+            FMP_CA_CERT_SUBJECT=$2
+            echo "FLAG: FMP_CA_CERT_SUBJECT: ${FMP_CA_CERT_SUBJECT}"
+            shift
+            shift
+            ;;
+        --fmp-key-password)
+            FMP_KEY_PASSWORD=$2
+            echo "FLAG: FMP_KEY_PASSWORD: (set)"
+            shift
+            shift
+            ;;
+        --fmp-root-cert-subject)
+            FMP_ROOT_CERT_SUBJECT=$2
+            echo "FLAG: FMP_ROOT_CERT_SUBJECT: ${FMP_ROOT_CERT_SUBJECT}"
+            shift
+            shift
+            ;;
+        --fmp-user-cert-subject)
+            FMP_USER_CERT_SUBJECT=$2
+            echo "FLAG: FMP_USER_CERT_SUBJECT: ${FMP_USER_CERT_SUBJECT}"
+            shift
             shift
             ;;
         --force)
@@ -92,6 +123,10 @@ parse_args()
             echo "--ca-cert-subject: subject data for CA cert(s)."
             echo "  Make sure to use quotes and place ### where the key # should go."
             echo "--debug: enables debug logging"
+            echo "--fmp-ca-cert-subject: subject data for FMP CA cert"
+            echo "--fmp-key-password: password for all FMP keys"
+            echo "--fmp-root-cert-subject: subject data for FMP root cert"
+            echo "--fmp-user-cert-subject: subject data for FMP user cert"
             echo "--force: force overwrite files (dangerous!)"
             echo "--key-size: set RSA key size to 2048 or 4096"
             echo "--quiet: disable normal logging"
@@ -132,9 +167,9 @@ version_greater_equal()
 
 # Checks
 
-log "Check for openssl"
+log "Check for dependencies"
 command -v openssl >/dev/null 2>&1 || { echo >&2 "Missing openssl command.  Aborting."; exit 1; }
-log "> openssl found."
+command -v hexdump >/dev/null 2>&1 || { echo >&2 "Missing hexdump command.  Aborting."; exit 1; }
 
 OPENSSL_VERSION=$(openssl version | cut -d' ' -f2)
 log "Check openssl version (${OPENSSL_VERSION}) >= ${MIN_OPENSSL_VER}"
@@ -142,8 +177,9 @@ version_greater_equal "${OPENSSL_VERSION}" ${MIN_OPENSSL_VER} || { echo >&2 "Nee
 log "> openssl version == ${OPENSSL_VERSION}"
 if [ "$(echo ${OPENSSL_VERSION} | cut -c1)" -eq 1 ]; then
     USE_OPENSSL1=1
-    echo "> Using OpenSSL 1.x commands"
+    log "> Using OpenSSL 1.x commands"
 fi
+log "> dependencies: OK"
 
 log "Check for ${OUT_DIR} directory"
 if [ ! -d "${OUT_DIR}" ]; then
@@ -153,10 +189,27 @@ else
     log "> Found ${OUT_DIR} directory"
 fi
 
+log "Check for ${OUT_DIR}/${FMP_CA_DIR} directory"
+if [ ! -d "${OUT_DIR}/${FMP_CA_DIR}" ]; then
+    log "> Creating ${OUT_DIR}/${FMP_CA_DIR} directory"
+    mkdir ${OUT_DIR}/${FMP_CA_DIR}
+else
+    log "> Found ${OUT_DIR}/${FMP_CA_DIR} directory"
+fi
+
+if [ "x${FMP_KEY_PASSWORD}" = "x" ]; then
+    echo "> ERROR: please set FMP key password with --fmp-key-password param.  Aborting."
+    exit 1
+fi
+
 log "Checking for existing keys"
 KEYS_FOUND=0
 ls ${OUT_DIR}/*.key >/dev/null 2>&1 && KEYS_FOUND=1
-ls ${OUT_DIR}/*.crt >/dev/null 2>&1 && KEYS_FOUND=1
+ls ${OUT_DIR}/*.cer >/dev/null 2>&1 && KEYS_FOUND=1
+ls ${OUT_DIR}/${FMP_CA_DIR}/*.key >/dev/null 2>&1 && KEYS_FOUND=1
+ls ${OUT_DIR}/${FMP_CA_DIR}/*.cer >/dev/null 2>&1 && KEYS_FOUND=1
+ls ${OUT_DIR}/${FMP_CA_DIR}/*.pem >/dev/null 2>&1 && KEYS_FOUND=1
+ls ${OUT_DIR}/${FMP_CA_DIR}/*.pfx >/dev/null 2>&1 && KEYS_FOUND=1
 if [ "${KEYS_FOUND}" -eq 1 ]; then
     if [ "${FORCE}" -eq 1 ]; then
         echo "> Force flag enabled: overwriting existing keys!"
@@ -171,8 +224,8 @@ fi
 
 # Generate a randfile
 
-log "Generating randfile"
-dd if=/dev/urandom of=${OUT_DIR}/randfile bs=256 count=1 > /dev/null 2>&1
+log "Generating ECDSA randfile"
+dd if=/dev/urandom of=randfile bs=256 count=1 > /dev/null 2>&1
 log "> Generated."
 
 
@@ -192,7 +245,7 @@ do
 
         openssl req -new -key ${OUT_DIR}/qpsa_rootca${key}.key -sha384 -out ${OUT_DIR}/rootca${key}_pem.crt \
             -subj "$(echo "${ROOT_CERT_SUBJECT}" | sed "s/###/${key}/g")" \
-            -config opensslroot.cfg -x509 -days 7300 -set_serial 1
+            -config ${SCRIPT_DIR}/opensslroot.cfg -x509 -days 7300 -set_serial 1
 
         openssl x509 -in ${OUT_DIR}/rootca${key}_pem.crt -inform PEM -out ${OUT_DIR}/qpsa_rootca${key}.cer -outform DER
         log "> Created ECDSA root ${key} certificate"
@@ -204,10 +257,10 @@ do
 
         openssl req -new -key ${OUT_DIR}/qpsa_attestca${key}.key -out ${OUT_DIR}/ca${key}.csr \
             -subj "$(echo "${CA_CERT_SUBJECT}" | sed "s/###/${key}/g")" \
-            -config opensslroot.cfg -sha384
+            -config ${SCRIPT_DIR}/opensslroot.cfg -sha384
 
         openssl x509 -req -in ${OUT_DIR}/ca${key}.csr -CA ${OUT_DIR}/rootca${key}_pem.crt -CAkey ${OUT_DIR}/qpsa_rootca${key}.key \
-            -out ${OUT_DIR}/attestca${key}_pem.crt -set_serial 1 -days 7300 -extfile v3.ext -sha384 -CAcreateserial
+            -out ${OUT_DIR}/attestca${key}_pem.crt -set_serial 1 -days 7300 -extfile ${SCRIPT_DIR}/v3.ext -sha384 -CAcreateserial
 
         openssl x509 -inform PEM -in ${OUT_DIR}/attestca${key}_pem.crt -outform DER -out ${OUT_DIR}/qpsa_attestca${key}.cer
         log "> Created EC Attestation CA ${key} certificate"
@@ -225,13 +278,13 @@ do
             # Updated -sha256 to -sha384
             openssl req -new -sha384 -key ${OUT_DIR}/qpsa_rootca${key}.key -x509 -out ${OUT_DIR}/rootca_pem${key}.crt \
                 -subj "$(echo "${ROOT_CERT_SUBJECT}" | sed "s/###/${key}/g")" \
-                -days 7300 -set_serial 1 -config opensslroot.cfg -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha384
+                -days 7300 -set_serial 1 -config ${SCRIPT_DIR}/opensslroot.cfg -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha384
         else
             # Dropped "-sigopt digest:sha256" from the original command
             # Updated -sha256 to -sha384
             openssl req -new -sha384 -key ${OUT_DIR}/qpsa_rootca${key}.key -x509 -out ${OUT_DIR}/rootca_pem${key}.crt \
                 -subj "$(echo "${ROOT_CERT_SUBJECT}" | sed "s/###/${key}/g")" \
-                -days 7300 -set_serial 1 -config opensslroot.cfg -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1
+                -days 7300 -set_serial 1 -config ${SCRIPT_DIR}/opensslroot.cfg -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1
         fi
 
         openssl x509 -in ${OUT_DIR}/rootca_pem${key}.crt -inform PEM -out ${OUT_DIR}/qpsa_rootca${key}.cer -outform DER
@@ -246,17 +299,17 @@ do
         # Added -sha384
         openssl req -new -key ${OUT_DIR}/qpsa_attestca${key}.key -out ${OUT_DIR}/attestca${key}.csr \
             -subj "$(echo "${CA_CERT_SUBJECT}" | sed "s/###/${key}/g")" \
-            -config opensslroot.cfg -sha384
+            -config ${SCRIPT_DIR}/opensslroot.cfg -sha384
 
         if [ "${USE_OPENSSL1}" -eq 1 ]; then
             # Updated -sha256 to -sha384
             openssl x509 -req -in ${OUT_DIR}/attestca${key}.csr -CA ${OUT_DIR}/rootca_pem${key}.crt -CAkey ${OUT_DIR}/qpsa_rootca${key}.key \
-                -out ${OUT_DIR}/attestca${key}_pem.crt -sha384 -set_serial 5 -days 7300 -extfile v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha256
+                -out ${OUT_DIR}/attestca${key}_pem.crt -sha384 -set_serial 5 -days 7300 -extfile ${SCRIPT_DIR}/v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha256
         else
             # Dropped: "- sigopt digest:sha256" from original command
             # Updated -sha256 to -sha384
             openssl x509 -req -in ${OUT_DIR}/attestca${key}.csr -CA ${OUT_DIR}/rootca_pem${key}.crt -CAkey ${OUT_DIR}/qpsa_rootca${key}.key \
-                -out ${OUT_DIR}/attestca${key}_pem.crt -sha384 -set_serial 5 -days 7300 -extfile v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1
+                -out ${OUT_DIR}/attestca${key}_pem.crt -sha384 -set_serial 5 -days 7300 -extfile ${SCRIPT_DIR}/v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1
         fi
 
         openssl x509 -inform PEM -in ${OUT_DIR}/attestca${key}_pem.crt -outform DER -out ${OUT_DIR}/qpsa_attestca${key}.cer
@@ -285,12 +338,91 @@ done
 openssl dgst -sha384 ${OUT_DIR}/qpsa_roots.bin >${OUT_DIR}/sha384_roots_hash.txt
 log "> Created"
 
+# Generate FMP (Firmware Management Protocol keys)
+# https://github.com/tianocore/tianocore.github.io/wiki/Capsule-Based-System-Firmware-Update-Generate-Keys
+
+log "Initialize FMP CA dir"
+mkdir -p ${OUT_DIR}/${FMP_CA_DIR}/newcerts
+touch ${OUT_DIR}/${FMP_CA_DIR}/index.txt
+echo 01 > ${OUT_DIR}/${FMP_CA_DIR}/serial
+log "> Initialized"
+
+# NOTE: The following commands have to be run from the local path where "./demoCA" exists
+# save our current location (in case we want it later)
+ORIG_DIR="$(pwd)"
+# copy our randomness file along with us
+cp randfile ${OUT_DIR}/
+cd ${OUT_DIR}/
+
+log "Create FMP root key/certificate"
+openssl genrsa -aes256 -passout "pass:${FMP_KEY_PASSWORD}" \
+    -out ${FMP_CA_DIR}/QcFMPRoot.key ${FMP_KEY_SIZE}
+openssl req -new -x509 -config ${SCRIPT_DIR}/opensslroot.cfg -subj "${FMP_ROOT_CERT_SUBJECT}" -days 3650 \
+    -passin "pass:${FMP_KEY_PASSWORD}" -key ${FMP_CA_DIR}/QcFMPRoot.key \
+    -out ${FMP_CA_DIR}/QcFMPRoot.crt
+openssl x509 -in ${FMP_CA_DIR}/QcFMPRoot.crt \
+    -out ${FMP_CA_DIR}/QcFMPRoot.cer -outform DER
+openssl x509 -inform DER -in ${FMP_CA_DIR}/QcFMPRoot.cer \
+    -outform PEM -out ${FMP_CA_DIR}/QcFMPRoot.pub.pem
+log "> Created"
+
+log "Create FMP intermediate CA key/certificate"
+# Enter passphrase
+openssl genrsa -aes256 -passout "pass:${FMP_KEY_PASSWORD}" \
+    -out ${FMP_CA_DIR}/QcFMPSub.key ${FMP_KEY_SIZE}
+openssl req -new -config ${SCRIPT_DIR}/opensslroot.cfg -subj "${FMP_CA_CERT_SUBJECT}" \
+    -passin "pass:${FMP_KEY_PASSWORD}" -key ${FMP_CA_DIR}/QcFMPSub.key \
+    -out ${FMP_CA_DIR}/QcFMPSub.csr
+openssl ca -config ${SCRIPT_DIR}/opensslroot.cfg -extensions v3_ca -batch \
+    -in ${FMP_CA_DIR}/QcFMPSub.csr -days 3650 \
+    -out ${FMP_CA_DIR}/QcFMPSub.crt -cert ${FMP_CA_DIR}/QcFMPRoot.crt \
+    -passin "pass:${FMP_KEY_PASSWORD}" -keyfile ${FMP_CA_DIR}/QcFMPRoot.key
+openssl x509 -in ${FMP_CA_DIR}/QcFMPSub.crt \
+    -out ${FMP_CA_DIR}/QcFMPSub.cer -outform DER
+openssl x509 -inform DER -in ${FMP_CA_DIR}/QcFMPSub.cer \
+    -outform PEM -out ${FMP_CA_DIR}/QcFMPSub.pub.pem
+log "> Created"
+
+log "Create FMP user key/certificate for data signing"
+openssl genrsa -aes256 -passout "pass:${FMP_KEY_PASSWORD}" \
+    -out ${FMP_CA_DIR}/QcFMPCert.key ${FMP_KEY_SIZE}
+openssl req -new -config ${SCRIPT_DIR}/opensslroot.cfg -subj "${FMP_USER_CERT_SUBJECT}" \
+    -passin "pass:${FMP_KEY_PASSWORD}" -key ${FMP_CA_DIR}/QcFMPCert.key \
+    -out ${FMP_CA_DIR}/QcFMPCert.csr
+openssl ca -config ${SCRIPT_DIR}/opensslroot.cfg -batch \
+    -in ${FMP_CA_DIR}/QcFMPCert.csr -days 3650 \
+    -out ${FMP_CA_DIR}/QcFMPCert.crt -cert ${FMP_CA_DIR}/QcFMPSub.crt \
+    -passin "pass:${FMP_KEY_PASSWORD}" -keyfile ${FMP_CA_DIR}/QcFMPSub.key
+openssl x509 -in ${FMP_CA_DIR}/QcFMPCert.crt \
+    -out ${FMP_CA_DIR}/QcFMPCert.cer -outform DER
+openssl x509 -inform DER -in ${FMP_CA_DIR}/QcFMPCert.cer \
+    -outform PEM -out ${FMP_CA_DIR}/QcFMPCert.pub.pem
+log "> Created"
+
+log "Convert FMP user key to PKCS12 format"
+openssl pkcs12 -export -passout "pass:${FMP_KEY_PASSWORD}" -out ${FMP_CA_DIR}/QcFMPCert.pfx \
+    -passin "pass:${FMP_KEY_PASSWORD}" -inkey ${FMP_CA_DIR}/QcFMPCert.key \
+    -in ${FMP_CA_DIR}/QcFMPCert.crt
+openssl pkcs12 -passin "pass:${FMP_KEY_PASSWORD}" -in ${FMP_CA_DIR}/QcFMPCert.pfx -nodes \
+    -out ${FMP_CA_DIR}/QcFMPCert.pem
+log "> Converted"
+
+log "Generate FMP root hex file"
+printf '0x%08x ' $(stat -c %s ${FMP_CA_DIR}/QcFMPRoot.cer) > ${FMP_CA_DIR}/QcFMPRoot.inc
+hexdump --no-squeezing -e '1/1 "0x%02x" 1/1 "%02x" 1/1 "%02x" 1/1 "%02x "' ${FMP_CA_DIR}/QcFMPRoot.cer | sed 's/ *$//' >> ${FMP_CA_DIR}/QcFMPRoot.inc
+log "> Generated"
+
+# cleanup randfile
+rm randfile
+# Go back the original dir
+cd ${ORIG_DIR}
 
 # Clean up
 
 log "Cleaning up"
 
-rm ${OUT_DIR}/randfile
+rm randfile
 rm ${OUT_DIR}/*.csr
+rm ${OUT_DIR}/${FMP_CA_DIR}/*.csr
 
 log "> Done"
