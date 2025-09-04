@@ -1,0 +1,4 @@
+[submodule "cbsp-boot-utilities"]
+	path = cbsp-boot-utilities
+	url = https://github.com/igoropaniuk/cbsp-boot-utilities
+	branch = qdte_replacement
