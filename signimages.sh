@@ -268,8 +268,8 @@ version_greater_equal "${PYTHON_VERSION}" ${MIN_PYTHON_VER} || { echo >&2 "Need 
 log "> python3 version == ${PYTHON_VERSION}"
 
 ## TODO: check for the following Python3 packages:
-## python-magic
-## pyelftools
+## pip3 install --user python-magic OR sudo apt install python3-magic
+## pip3 install --user pyelftools OR sudo apt install python3-pyelftools
 
 [ -z "${SECTOOL}"  ] && { echo >&2 "ERROR: Missing --sectoolv2 parameter.  Aborting."; exit 1; }
 [ -z "${SECURITY_PROFILE}"  ] && { echo >&2 "ERROR: Missing --security-profile parameter.  Aborting."; exit 1; }
