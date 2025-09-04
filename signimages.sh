@@ -258,16 +258,16 @@ log "Check for dtc (device-tree compiler)"
 command -v dtc >/dev/null 2>&1 || { echo >&2 "Missing dtc command.  Aborting."; exit 1; }
 log "> dtc found."
 
-log "Check for python 3.x"
-command -v python >/dev/null 2>&1 || { echo >&2 "Missing python.  Aborting."; exit 1; }
-log "> python found."
+log "Check for python3 3.x"
+command -v python3 >/dev/null 2>&1 || { echo >&2 "Missing python3.  Aborting."; exit 1; }
+log "> python3 found."
 
-PYTHON_VERSION=$(python --version | cut -d' ' -f2)
-log "Check python version (${PYTHON_VERSION}) >= ${MIN_PYTHON_VER}"
-version_greater_equal "${PYTHON_VERSION}" ${MIN_PYTHON_VER} || { echo >&2 "Need at least python ${MIN_PYTHON_VER}.  Aborting."; exit 1; }
-log "> python version == ${PYTHON_VERSION}"
+PYTHON_VERSION=$(python3 --version | cut -d' ' -f2)
+log "Check python3 version (${PYTHON_VERSION}) >= ${MIN_PYTHON_VER}"
+version_greater_equal "${PYTHON_VERSION}" ${MIN_PYTHON_VER} || { echo >&2 "Need at least python3 ${MIN_PYTHON_VER}.  Aborting."; exit 1; }
+log "> python3 version == ${PYTHON_VERSION}"
 
-## TODO: check for the following Python packages:
+## TODO: check for the following Python3 packages:
 ## python-magic
 ## pyelftools
 
