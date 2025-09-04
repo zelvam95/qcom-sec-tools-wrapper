@@ -12,11 +12,14 @@ KEYS_CA_KEY="qpsa_attestca###.key"
 KEYS_ROOTS_HASH="sha384_roots_hash.txt"
 ROOT_CERT_TOTALNUM=1
 SIGNING_KEY_INDEX=0
-OUT_DIR="./"
+OUT_DIR="$(pwd)"
 ANTI_ROLLBACK_VERSION=0x0
 SECTOOL=""
 SECURITY_PROFILE=""
-SCRIPT_PATH=$(dirname "$0")
+SCRIPT_PATH="$(dirname "$(realpath -- "$0")")"
+MIN_PYTHON_VER="3.10.0"
+FMP_CA_DIR="demoCA"
+FMP_ROOT_HEX_FILE="QcFMPRoot.inc"
 
 # Flags
 DEBUG=0
@@ -74,7 +77,7 @@ parse_args()
             shift
             ;;
         --out-dir)
-            OUT_DIR=$2
+            OUT_DIR="$(realpath -- "$2")"
             echo "FLAG: OUT_DIR: ${OUT_DIR}"
             shift
             shift
@@ -169,6 +172,11 @@ log()
     fi
 }
 
+version_greater_equal()
+{
+    printf '%s\n%s\n' "$2" "$1" | sort --check=quiet --version-sort
+}
+
 sign_verify()
 {
     debug_log "Found $1"
@@ -245,6 +253,23 @@ sign_verify()
 
     log "> Verified."
 }
+
+log "Check for dtc (device-tree compiler)"
+command -v dtc >/dev/null 2>&1 || { echo >&2 "Missing dtc command.  Aborting."; exit 1; }
+log "> dtc found."
+
+log "Check for python 3.x"
+command -v python >/dev/null 2>&1 || { echo >&2 "Missing python.  Aborting."; exit 1; }
+log "> python found."
+
+PYTHON_VERSION=$(python --version | cut -d' ' -f2)
+log "Check python version (${PYTHON_VERSION}) >= ${MIN_PYTHON_VER}"
+version_greater_equal "${PYTHON_VERSION}" ${MIN_PYTHON_VER} || { echo >&2 "Need at least python ${MIN_PYTHON_VER}.  Aborting."; exit 1; }
+log "> python version == ${PYTHON_VERSION}"
+
+## TODO: check for the following Python packages:
+## python-magic
+## pyelftools
 
 [ -z "${SECTOOL}"  ] && { echo >&2 "ERROR: Missing --sectoolv2 parameter.  Aborting."; exit 1; }
 [ -z "${SECURITY_PROFILE}"  ] && { echo >&2 "ERROR: Missing --security-profile parameter.  Aborting."; exit 1; }
@@ -361,6 +386,47 @@ VERBOSE=""
 if [ "${DEBUG}" -eq 1 ]; then
     VERBOSE="--verbose"
 fi
+
+log "Adding FMP root certificate to xbl_config.elf."
+debug_log "> Clear old xbl_config-temp dir"
+rm -rf ${OUT_DIR}/xbl_config-temp
+debug_log "> Dumping contents of xbl_config.elf to ${OUT_DIR}/xbl_config-temp"
+${SECTOOL} secure-image --dump ${OUT_DIR}/xbl_config-temp ${OUT_DIR}/xbl_config.elf
+file_list=$(find ${OUT_DIR}/xbl_config-temp/segments -iname "*.bin")
+found_dtb=0
+for file in ${file_list}
+do
+    debug_log "> Checking ${file} for DTB values"
+    if [ "$(hexdump -n 4 -e '4/1 "%02x"' ${file})" = "d00dfeed" ]; then
+        # check for QcCapsuleRootCert which we need to replace
+        grep --quiet "QcCapsuleRootCert" -F ${file}
+        if [ "$?" -eq "0" ]; then
+          found_dtb=1
+          log "> Setting QcCapsuleRootCert in ${file}"
+          # generate a dts from the post-DDR dtb
+          dtc -I dtb -O dts ${file} > ${file}.dts
+          sed "/QcCapsuleRootCert/ { s/<[^>]*>/<$(cat ${KEYS_PATH}/${FMP_CA_DIR}/${FMP_ROOT_HEX_FILE})>/g }" ${file}.dts > ${file}.new.dts
+          # generate a 2-byte aligned dtb from the modified post-DDR dts
+          dtc -a 2 -I dts -O dtb ${file}.new.dts > ${file}.new
+          rm ${file}*dts
+          break
+        fi
+    fi
+done
+
+# if changed recombine
+if [ "${found_dtb}" -eq "1" ]; then
+    log "> Combining segments back into xbl_config.elf."
+    python3 ${SCRIPT_PATH}/cbsp-boot-utilities/uefi_capsule_generation/dump_dtb_xblconfig.py ${OUT_DIR}/xbl_config.elf --replace-dtb 8 \
+        ${file}.new ${OUT_DIR}/xbl_config_patched.elf
+    mv ${OUT_DIR}/xbl_config_patched.elf ${OUT_DIR}/xbl_config.elf
+else
+    log "> WARNING: No post-DDR dtb was found! No changes made to xbl_config.elf."
+fi
+debug_log "> Cleaning up temp files"
+rm -rf ${OUT_DIR}/xbl_config-temp
+
+log "> Done"
 
 log "Searching for MDT files without matching MBN files."
 file_list=$(find ${OUT_DIR} -iname "*.mdt")
