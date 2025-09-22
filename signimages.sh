@@ -20,6 +20,7 @@ SCRIPT_PATH="$(dirname "$(realpath -- "$0")")"
 MIN_PYTHON_VER="3.10.0"
 FMP_CA_DIR="demoCA"
 FMP_ROOT_HEX_FILE="QcFMPRoot.inc"
+UEFI_KEYS_PATH=""
 
 # Flags
 DEBUG=0
@@ -127,6 +128,12 @@ parse_args()
             shift
             shift
             ;;
+        --uefi-keys-path)
+            UEFI_KEYS_PATH=$2
+            echo "FLAG: UEFI_KEYS_PATH: ${UEFI_KEYS_PATH}"
+            shift
+            shift
+            ;;
         --version)
             echo "Version: ${VERSION}"
             exit 0
@@ -147,6 +154,7 @@ parse_args()
             echo "--sectoolv2: path to sectoolv2 binary"
             echo "--security-profile: path to *-security-profile.xml"
             echo "--signing-key-index: which CA key index to use for signing (default: ${SIGNING_KEY_INDEX})"
+            echo "--uefi-keys-path: path to UEFI signing keys/certs"
             exit 0
             ;;
         *)
@@ -271,11 +279,18 @@ log "> python3 version == ${PYTHON_VERSION}"
 ## pip3 install --user python-magic OR sudo apt install python3-magic
 ## pip3 install --user pyelftools OR sudo apt install python3-pyelftools
 
+if [ ! -z "${UEFI_KEYS_PATH}" ]; then
+    log "Check for sbsign command"
+    command -v sbsign >/dev/null 2>&1 || { echo >&2 "Missing sbsign command needed for UEFI signing.  Aborting."; exit 1; }
+    log "> sbsign command found."
+fi
+
 [ -z "${SECTOOL}"  ] && { echo >&2 "ERROR: Missing --sectoolv2 parameter.  Aborting."; exit 1; }
 [ -z "${SECURITY_PROFILE}"  ] && { echo >&2 "ERROR: Missing --security-profile parameter.  Aborting."; exit 1; }
 [ ! -f "${SECURITY_PROFILE}"  ] && { echo >&2 "ERROR: File for security-profile could not be found: ${SECURITY_PROFILE}  Aborting."; exit 1; }
 [ ! -d "${KEYS_PATH}"  ] && { echo >&2 "ERROR: Directory for KEYS_PATH is not found: ${KEYS_PATH}.  Use --keys-path to set.  Aborting."; exit 1; }
 [ ! -d "${OUT_DIR}" ] && { echo >&2 "ERROR: OUT_DIR not found: ${OUT_DIR}.  Aborting."; exit 1; }
+[ ! -z "${UEFI_KEYS_PATH}" ] && [ ! -d "${UEFI_KEYS_PATH}"  ] && { echo >&2 "ERROR: Directory for UEFI_KEYS_PATH is not found: ${UEFI_KEYS_PATH}.  Use --uefi-keys-path to set.  Aborting."; exit 1; }
 
 if [ "${SIGNING_KEY_INDEX}" -ge "${ROOT_CERT_TOTALNUM}" ]; then
         echo >&2 "ERROR: --signing-key-index(${SIGNING_KEY_INDEX}) cannot be equal or greater to --root-cert-totalnum(${ROOT_CERT_TOTALNUM}).  Aborting."
@@ -460,3 +475,44 @@ do
 done
 
 log "Image signing complete."
+
+# Sign efi DTB
+if [ ! -z "${UEFI_KEYS_PATH}" ]; then
+    log "UEFI: Start signing handing for keys: ${UEFI_KEYS_PATH}"
+    mkdir -p ./uefi-mnt/
+
+    # if missing, copy efi.bin into OUT_DIR for modification
+    if [ ! -f ${OUT_DIR}/efi.bin ]; then
+        debug_log "> Copying efi.bin to ${OUT_DIR} for modification."
+        cp efi.bin ${OUT_DIR}/efi.bin
+    fi
+
+    # modify efi.bin
+    debug_log "> Mounting efi.bin for modification"
+    sudo mount -t vfat -o loop ${OUT_DIR}/efi.bin ./uefi-mnt/
+    log "UEFI: efi.bin: Signing EFI/BOOT/bootaa64.efi"
+    sudo sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ./uefi-mnt/EFI/BOOT/bootaa64.efi --output ./uefi-mnt/EFI/BOOT/bootaa64.efi
+    sync
+    debug_log "> Unmount efi.bin"
+    sudo umount ./uefi-mnt
+    sync
+
+    # if missing, copy dtb.bin into OUT_DIR for signing
+    if [ ! -f ${OUT_DIR}/dtb.bin ]; then
+        debug_log "> Copying dtb.bin to ${OUT_DIR} for modification."
+        cp dtb.bin ${OUT_DIR}/dtb.bin
+    fi
+
+    # modify dtb.bin
+    debug_log "> Mounting dtb.bin for modification"
+    sudo mount -t vfat -o loop ${OUT_DIR}/dtb.bin ./uefi-mnt/
+    log "UEFI: dtb.bin: Creating combined-dtb.sig"
+    sudo openssl cms -sign -inkey ${UEFI_KEYS_PATH}/DB.key -signer ${UEFI_KEYS_PATH}/DB.crt -binary -in ./uefi-mnt/combined-dtb.dtb --out ./uefi-mnt/combined-dtb.sig -outform DER
+    sync
+    debug_log "> Unmount dtb.bin"
+    sudo umount ./uefi-mnt
+    sync
+
+    rmdir ./uefi-mnt
+    log "> Done."
+fi
