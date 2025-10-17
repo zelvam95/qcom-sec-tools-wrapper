@@ -416,7 +416,7 @@ if [ ! -z "${UEFI_KEYS_PATH}" ]; then
     sudo mkdir -p ./mnt/loader/keys/auto
     log "UEFI: efi.bin: Creating loader.conf with secure-boot-enroll force"
     echo "secure-boot-enroll force" > loader.conf
-    echo "secure-boot-enroll-timeout-sec 0" > loader.conf
+    echo "secure-boot-enroll-timeout-sec 0" >> loader.conf
     sudo cp loader.conf ./mnt/loader/
     rm loader.conf
     debug_log "> Copy DB.auth and KEK.auth keys to loader/keys/auto"
