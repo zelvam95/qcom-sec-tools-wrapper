@@ -493,6 +493,14 @@ if [ ! -z "${UEFI_KEYS_PATH}" ]; then
     log "UEFI: efi.bin: Signing EFI/BOOT/bootaa64.efi"
     sudo sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ./uefi-mnt/EFI/BOOT/bootaa64.efi --output ./uefi-mnt/EFI/BOOT/bootaa64.efi
     sync
+    log "UEFI: Searching for vmlinuz files to sign."
+    file_list=$(find  ./uefi-mnt/ -iname "*vmlinuz*")
+    for file in ${file_list}
+    do
+        debug_log "> Signing ${file} with DB key/cert.."
+        sudo sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ${file} --output ${file}
+    done
+    sync
     debug_log "> Unmount efi.bin"
     sudo umount ./uefi-mnt
     sync
@@ -514,5 +522,15 @@ if [ ! -z "${UEFI_KEYS_PATH}" ]; then
     sync
 
     rmdir ./uefi-mnt
+
+    # look for vmlinuz in rootfs mount
+    log "Searching for vmlinuz files to sign."
+    file_list=$(find ${OUT_DIR} -iname "*vmlinuz*")
+    for file in ${file_list}
+    do
+        debug_log "> Signing ${file} with DB key/cert.."
+        sudo sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ${file} --output ${file}
+    done
+
     log "> Done."
 fi
