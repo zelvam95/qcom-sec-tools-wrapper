@@ -402,46 +402,50 @@ if [ "${DEBUG}" -eq 1 ]; then
     VERBOSE="--verbose"
 fi
 
-log "Adding FMP root certificate to xbl_config.elf."
-debug_log "> Clear old xbl_config-temp dir"
-rm -rf ${OUT_DIR}/xbl_config-temp
-debug_log "> Dumping contents of xbl_config.elf to ${OUT_DIR}/xbl_config-temp"
-${SECTOOL} secure-image --dump ${OUT_DIR}/xbl_config-temp ${OUT_DIR}/xbl_config.elf
-file_list=$(find ${OUT_DIR}/xbl_config-temp/segments -iname "*.bin")
-found_dtb=0
-for file in ${file_list}
-do
-    debug_log "> Checking ${file} for DTB values"
-    if [ "$(hexdump -n 4 -e '4/1 "%02x"' ${file})" = "d00dfeed" ]; then
-        # check for QcCapsuleRootCert which we need to replace
-        grep --quiet "QcCapsuleRootCert" -F ${file}
-        if [ "$?" -eq "0" ]; then
-          found_dtb=1
-          log "> Setting QcCapsuleRootCert in ${file}"
-          # generate a dts from the post-DDR dtb
-          dtc -I dtb -O dts ${file} > ${file}.dts
-          sed "/QcCapsuleRootCert/ { s/<[^>]*>/<$(cat ${KEYS_PATH}/${FMP_CA_DIR}/${FMP_ROOT_HEX_FILE})>/g }" ${file}.dts > ${file}.new.dts
-          # generate a 2-byte aligned dtb from the modified post-DDR dts
-          dtc -a 2 -I dts -O dtb ${file}.new.dts > ${file}.new
-          rm ${file}*dts
-          break
+if [ -f ${OUT_DIR}/xbl_config.elf ]; then
+    log "Adding FMP root certificate to xbl_config.elf."
+    debug_log "> Clear old xbl_config-temp dir"
+    rm -rf ${OUT_DIR}/xbl_config-temp
+    debug_log "> Dumping contents of xbl_config.elf to ${OUT_DIR}/xbl_config-temp"
+    ${SECTOOL} secure-image --dump ${OUT_DIR}/xbl_config-temp ${OUT_DIR}/xbl_config.elf
+    file_list=$(find ${OUT_DIR}/xbl_config-temp/segments -iname "*.bin")
+    found_dtb=0
+    for file in ${file_list}
+    do
+        debug_log "> Checking ${file} for DTB values"
+        if [ "$(hexdump -n 4 -e '4/1 "%02x"' ${file})" = "d00dfeed" ]; then
+            # check for QcCapsuleRootCert which we need to replace
+            grep --quiet "QcCapsuleRootCert" -F ${file}
+            if [ "$?" -eq "0" ]; then
+                found_dtb=1
+                log "> Setting QcCapsuleRootCert in ${file}"
+                # generate a dts from the post-DDR dtb
+                dtc -I dtb -O dts ${file} > ${file}.dts
+                sed "/QcCapsuleRootCert/ { s/<[^>]*>/<$(cat ${KEYS_PATH}/${FMP_CA_DIR}/${FMP_ROOT_HEX_FILE})>/g }" ${file}.dts > ${file}.new.dts
+                # generate a 2-byte aligned dtb from the modified post-DDR dts
+                dtc -a 2 -I dts -O dtb ${file}.new.dts > ${file}.new
+                rm ${file}*dts
+                break
+            fi
         fi
+    done
+
+    # if changed recombine
+    if [ "${found_dtb}" -eq "1" ]; then
+        log "> Combining segments back into xbl_config.elf."
+        python3 ${SCRIPT_PATH}/cbsp-boot-utilities/uefi_capsule_generation/dump_dtb_xblconfig.py ${OUT_DIR}/xbl_config.elf --replace-dtb 8 \
+            ${file}.new ${OUT_DIR}/xbl_config_patched.elf
+        mv ${OUT_DIR}/xbl_config_patched.elf ${OUT_DIR}/xbl_config.elf
+    else
+        log "> WARNING: No post-DDR dtb was found! No changes made to xbl_config.elf."
     fi
-done
+    debug_log "> Cleaning up temp files"
+    rm -rf ${OUT_DIR}/xbl_config-temp
 
-# if changed recombine
-if [ "${found_dtb}" -eq "1" ]; then
-    log "> Combining segments back into xbl_config.elf."
-    python3 ${SCRIPT_PATH}/cbsp-boot-utilities/uefi_capsule_generation/dump_dtb_xblconfig.py ${OUT_DIR}/xbl_config.elf --replace-dtb 8 \
-        ${file}.new ${OUT_DIR}/xbl_config_patched.elf
-    mv ${OUT_DIR}/xbl_config_patched.elf ${OUT_DIR}/xbl_config.elf
+    log "> Done"
 else
-    log "> WARNING: No post-DDR dtb was found! No changes made to xbl_config.elf."
+    log "WARNING: No xbl_config.efl was found.  Skipping processing."
 fi
-debug_log "> Cleaning up temp files"
-rm -rf ${OUT_DIR}/xbl_config-temp
-
-log "> Done"
 
 log "Searching for MDT files without matching MBN files."
 file_list=$(find ${OUT_DIR} -iname "*.mdt")
