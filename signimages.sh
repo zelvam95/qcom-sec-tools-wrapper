@@ -303,7 +303,7 @@ sign_verify()
     fi
 
     log_debug "Signing $1"
-    ${SECTOOL} secure-image ${VERBOSE} \
+    OUTPUT=$(${SECTOOL} secure-image ${VERBOSE} \
         --sign $1 --image-id=${IMAGE_ID} \
         --security-profile ${SECURITY_PROFILE} \
         --anti-rollback-version=${ANTI_ROLLBACK_VERSION} \
@@ -311,27 +311,39 @@ sign_verify()
         ${ROOT_CERT_INDEX} \
         --root-certificate ${ROOT_CERT_LIST} \
         --ca-certificate=${KEYS_CA_CERT_FILENAME} --ca-key=${KEYS_CA_KEY_FILENAME} \
-        --outfile $1
+        --outfile $1)
+    RESPONSE=$?
+    if [ "${RESPONSE}" -ne 0 ] || [ ! -z "${VERBOSE}" ]; then
+        echo -e "${OUTPUT}"
+        [ "${RESPONSE}" -ne 0 ] && { log_error "Root hash of $1 failed verification.  Aborting."; exit 1; }
+    fi
 
     if [ "${PIL_SPLIT_FLAG}" -eq 1 ]; then
-        ${SCRIPT_PATH}/bin/pil-splitter $1 ${filedir}/${file%.*}.mdt
+        OUTPUT=$(${SCRIPT_PATH}/bin/pil-splitter $1 ${filedir}/${file%.*}.mdt)
+        RESPONSE=$?
+        if [ "${RESPONSE}" -ne 0 ] || [ ! -z "${VERBOSE}" ]; then
+            echo -e "${OUTPUT}"
+            [ "${RESPONSE}" -ne 0 ] && { log_error "pil-splitter failed.  Aborting."; exit 1; }
+        fi
     fi
 
     log_debug "Verifying root hash of $1"
-    ${SECTOOL} secure-image ${VERBOSE} --verify-root ${ROOT_CERT_HASH} $1
-    if [ $? -ne 0 ]; then
-        log_error "Root hash of $1 failed verification.  Aborting."
-        exit 1
+    OUTPUT=$(${SECTOOL} secure-image ${VERBOSE} --verify-root ${ROOT_CERT_HASH} $1)
+    RESPONSE=$?
+    if [ "${RESPONSE}" -ne 0 ] || [ ! -z "${VERBOSE}" ]; then
+        echo -e "${OUTPUT}"
+        [ "${RESPONSE}" -ne 0 ] && { log_error "Root hash of $1 failed verification.  Aborting."; exit 1; }
     fi
 
     # verify pil-split file
     if [ "${PIL_SPLIT_FLAG}" -eq 1 ]; then
         mdt_file="${filedir}/${file%.*}.mdt"
         log_debug "Verifying root hash of ${mdt_file}"
-        ${SECTOOL} secure-image ${VERBOSE} --verify-root ${ROOT_CERT_HASH} ${mdt_file}
-        if [ $? -ne 0 ]; then
-            log_error "Root hash of ${mdt_file} failed verification.  Aborting."
-            exit 1
+        OUTPUT=$(${SECTOOL} secure-image ${VERBOSE} --verify-root ${ROOT_CERT_HASH} ${mdt_file})
+        RESPONSE=$?
+        if [ "${RESPONSE}" -ne 0 ] || [ ! -z "${VERBOSE}" ]; then
+            echo -e "${OUTPUT}"
+            [ "${RESPONSE}" -ne 0 ] && { log_error "Root hash of ${mdt_file} failed verification.  Aborting."; exit 1; }
         fi
     fi
 
@@ -533,7 +545,12 @@ do
     log_debug "> Checking for ${mbn_base}/${mbn_file}"
     if [ ! -f "${mbn_base}/${mbn_file}" ]; then
         log_debug "> ${mbn_base}/${mbn_file} not found!  Creating from MDT fragments."
-        ${SCRIPT_PATH}/bin/pil-squasher "${mbn_base}/${mbn_file}" ${file}
+        OUTPUT=$(${SCRIPT_PATH}/bin/pil-squasher "${mbn_base}/${mbn_file}" ${file})
+        RESPONSE=$?
+        if [ "${RESPONSE}" -ne 0 ] || [ ! -z "${VERBOSE}" ]; then
+            echo -e "${OUTPUT}"
+            [ "${RESPONSE}" -ne 0 ] && { log_error "pil-squasher for ${file}.  Aborting."; exit 1; }
+        fi
 	mbn_create_list="${mbn_create_list} ${mbn_base}/${mbn_file}"
     else
         log_debug "> Found ${mbn_base}/${mbn_file}"
