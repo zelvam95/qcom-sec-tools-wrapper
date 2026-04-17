@@ -469,12 +469,16 @@ if [ "${LOG_LEVEL}" -ge "${LOG_DEBUG}" ]; then
     VERBOSE="--verbose"
 fi
 
-if [ -f ${OUT_DIR}/xbl_config.elf ]; then
-    log_info "Adding FMP root certificate to xbl_config.elf."
+XBL_CONFIG_FILENAME="xbl_config.elf"
+if [ -f ${OUT_DIR}/uefi_dtbs.elf ]; then
+    XBL_CONFIG_FILENAME="uefi_dtbs.elf"
+fi
+if [ -f "${OUT_DIR}/${XBL_CONFIG_FILENAME}" ]; then
+    log_info "Adding FMP root certificate to ${XBL_CONFIG_FILENAME}."
     log_debug "> Clear old xbl_config-temp dir"
     rm -rf ${OUT_DIR}/xbl_config-temp
-    log_debug "> Dumping contents of xbl_config.elf to ${OUT_DIR}/xbl_config-temp"
-    ${SECTOOL} secure-image --dump ${OUT_DIR}/xbl_config-temp ${OUT_DIR}/xbl_config.elf
+    log_debug "> Dumping contents of ${XBL_CONFIG_FILENAME} to ${OUT_DIR}/xbl_config-temp"
+    ${SECTOOL} secure-image --dump ${OUT_DIR}/xbl_config-temp ${OUT_DIR}/${XBL_CONFIG_FILENAME}
     file_list=$(find ${OUT_DIR}/xbl_config-temp/segments -iname "*.bin")
     found_dtb=0
     for file in ${file_list}
@@ -499,17 +503,17 @@ if [ -f ${OUT_DIR}/xbl_config.elf ]; then
 
     # if changed recombine
     if [ "${found_dtb}" -eq "1" ]; then
-        log_debug "> Combining segments back into xbl_config.elf."
-        python3 ${SCRIPT_PATH}/cbsp-boot-utilities/uefi_capsule_generation/dump_dtb_xblconfig.py ${OUT_DIR}/xbl_config.elf --replace-dtb 8 \
-            ${file}.new ${OUT_DIR}/xbl_config_patched.elf
-        mv ${OUT_DIR}/xbl_config_patched.elf ${OUT_DIR}/xbl_config.elf
+        log_debug "> Combining segments back into ${XBL_CONFIG_FILENAME}."
+        python3 ${SCRIPT_PATH}/cbsp-boot-utilities/uefi_capsule_generation/dump_dtb_xblconfig.py ${OUT_DIR}/${XBL_CONFIG_FILENAME} --replace-dtb 8 \
+            ${file}.new ${OUT_DIR}/${XBL_CONFIG_FILENAME}.patched
+        mv ${OUT_DIR}/${XBL_CONFIG_FILENAME}.patched ${OUT_DIR}/${XBL_CONFIG_FILENAME}
     else
-        log_warn "> No post-DDR dtb was found! No changes made to xbl_config.elf."
+        log_warn "> No post-DDR dtb was found! No changes made to ${XBL_CONFIG_FILENAME}."
     fi
     log_debug "> Cleaning up temp files"
     rm -rf ${OUT_DIR}/xbl_config-temp
 
-    log_ok "> Completed FMP root processing"
+    log_ok "> Completed FMP root processing for ${XBL_CONFIG_FILENAME}"
 else
     log_warn "No xbl_config.elf was found.  Skipping processing."
 fi
