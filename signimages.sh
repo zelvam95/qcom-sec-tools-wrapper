@@ -291,7 +291,7 @@ sign_verify()
         return 0
     fi
 
-    if [ "${PIL_SPLIT_FLAG}" -eq "1" ]; then
+    if [ "${PIL_SPLIT_FLAG}" -eq 1 ]; then
         log_debug "> Found PIL-SPLIT flag for $1.  Cleaning up fragments."
         rm ${filedir}/${file%.*}.mdt
         rm ${filedir}/${file%.*}.b*
@@ -308,7 +308,7 @@ sign_verify()
         --ca-certificate=${KEYS_CA_CERT_FILENAME} --ca-key=${KEYS_CA_KEY_FILENAME} \
         --outfile $1
 
-    if [ "${PIL_SPLIT_FLAG}" -eq "1" ]; then
+    if [ "${PIL_SPLIT_FLAG}" -eq 1 ]; then
         ${SCRIPT_PATH}/bin/pil-splitter $1 ${filedir}/${file%.*}.mdt
     fi
 
@@ -320,7 +320,7 @@ sign_verify()
     fi
 
     # verify pil-split file
-    if [ "${PIL_SPLIT_FLAG}" -eq "1" ]; then
+    if [ "${PIL_SPLIT_FLAG}" -eq 1 ]; then
         mdt_file="${filedir}/${file%.*}.mdt"
         log_debug "Verifying root hash of ${mdt_file}"
         ${SECTOOL} secure-image ${VERBOSE} --verify-root ${ROOT_CERT_HASH} ${mdt_file}
@@ -546,7 +546,7 @@ log_info "Searching for ELF files to sign."
 file_list=$(find ${OUT_DIR} -iname "*.elf")
 for file in ${file_list}
 do
-    sign_verify ${file} 0
+    sign_verify "${file}" 0
 done
 
 log_ok "> Completed image signing"
