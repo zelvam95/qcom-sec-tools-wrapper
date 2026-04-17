@@ -521,6 +521,7 @@ if [ -f "${OUT_DIR}/${XBL_CONFIG_FILENAME}" ]; then
     # if changed recombine
     if [ "${found_dtb}" -eq "1" ]; then
         log_debug "> Combining segments back into ${XBL_CONFIG_FILENAME}."
+        log_debug "> python3 ${SCRIPT_PATH}/cbsp-boot-utilities/uefi_capsule_generation/dump_dtb_xblconfig.py ${OUT_DIR}/${XBL_CONFIG_FILENAME} --replace-dtb 8 ${file}.new ${OUT_DIR}/${XBL_CONFIG_FILENAME}.patched"
         python3 ${SCRIPT_PATH}/cbsp-boot-utilities/uefi_capsule_generation/dump_dtb_xblconfig.py ${OUT_DIR}/${XBL_CONFIG_FILENAME} --replace-dtb 8 \
             ${file}.new ${OUT_DIR}/${XBL_CONFIG_FILENAME}.patched
         mv ${OUT_DIR}/${XBL_CONFIG_FILENAME}.patched ${OUT_DIR}/${XBL_CONFIG_FILENAME}
