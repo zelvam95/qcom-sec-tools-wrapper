@@ -314,7 +314,7 @@ sign_verify()
         exit 1
     fi
 
-    if [ "${IMAGE_ID}" = "SKIP" ]; then
+    if [[ "${IMAGE_ID}" == *SKIP:* ]]; then
         log_warn "IMAGE-ID:SKIP for ${file}.  Skipping."
         return 0
     fi
@@ -477,7 +477,7 @@ hypvm.mbn QHEE 0 ${newline}\
 imagefv.elf UEFIFV 0 ${newline}\
 ipa_fws.mbn IPA-FW 1 ${newline}\
 loadalgota64.mbn TZ-APP-OEM 1 ${newline}\
-msbtfw11.mbn SKIP 0 ${newline}\
+msbtfw11.mbn SKIP:BAD-FORMAT 0 ${newline}\
 multi_image.mbn OEM-MISC 0 ${newline}\
 prog_firehose_ddr.elf DEVICE-PROGRAMMER 0 ${newline}\
 prog_firehose_lite.elf DEVICE-PROGRAMMER 0 ${newline}\
