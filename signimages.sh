@@ -292,9 +292,14 @@ sign_verify()
     fi
 
     if [ "${PIL_SPLIT_FLAG}" -eq 1 ]; then
-        log_debug "> Found PIL-SPLIT flag for $1.  Cleaning up fragments."
-        rm ${filedir}/${file%.*}.mdt
-        rm ${filedir}/${file%.*}.b*
+        if [ -f "${filedir}/${file%.*}.mdt" ]; then
+            log_debug "> Found PIL-SPLIT flag for $1.  Cleaning up fragments."
+            rm ${filedir}/${file%.*}.mdt
+            rm ${filedir}/${file%.*}.b* && true
+        else
+            log_debug "> Disabling PIL-SPLIT for $1.  No fragments found.."
+            PIL_SPLIT_FLAG=0
+        fi
     fi
 
     log_debug "Signing $1"
