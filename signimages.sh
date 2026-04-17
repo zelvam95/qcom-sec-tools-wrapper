@@ -22,9 +22,89 @@ FMP_CA_DIR="demoCA"
 FMP_ROOT_HEX_FILE="QcFMPRoot.inc"
 UEFI_KEYS_PATH=""
 
+#_color <color code> < text >
+_color() {
+    [[ "${FLAG_COLOR}" -eq "1" ]] && printf '\033[%sm%s\033[0m' "$1" "$2" && return
+    printf '%s' "$2"
+}
+
+# color render functions
+COLOR_RED()    { _color "0;31" "$*"; }
+COLOR_GREEN()  { _color "0;32" "$*"; }
+COLOR_YELLOW() { _color "0;33" "$*"; }
+COLOR_DIM()    { _color "2" "$*"; }
+
+# log levels
+LOG_ERROR=0
+LOG_WARN=1
+LOG_INFO=2
+LOG_DEBUG=3
+
 # Flags
-DEBUG=0
-QUIET=0
+FLAG_COLOR=0
+LOG_LEVEL=${LOG_INFO}
+
+# <level> <text>
+log()
+{
+    if [ "${LOG_LEVEL}" -lt "$1" ]; then
+        return
+    fi
+    case "$1" in
+        ${LOG_ERROR})
+            shift
+            echo >&2 "$(COLOR_RED '[ERROR]') $*"
+            ;;
+        ${LOG_WARN})
+            if [ "$1" -ge "${LOG_WARN}" ]; then
+                shift
+                echo "$(COLOR_YELLOW '[WARN]') $*"
+            fi
+            ;;
+        ${LOG_INFO})
+            if [ "$1" -ge "${LOG_INFO}" ]; then
+                shift
+                echo "[INFO] $*"
+            fi
+            ;;
+        ${LOG_DEBUG})
+            if [ "$1" -ge "${LOG_DEBUG}" ]; then
+                shift
+                echo "$(COLOR_DIM '[DEBUG]') $*"
+            fi
+            ;;
+        *)
+            echo "$1"
+            ;;
+    esac
+}
+
+log_error()
+{
+    log ${LOG_ERROR} "$*"
+}
+
+log_warn()
+{
+    log ${LOG_WARN} "$*"
+}
+
+log_info()
+{
+    log ${LOG_INFO} "$*"
+}
+
+log_debug()
+{
+    log ${LOG_DEBUG} "$*"
+}
+
+log_ok()
+{
+    if [ "${LOG_LEVEL}" -ge "${LOG_INFO}" ]; then
+        echo "$(COLOR_GREEN '[OK]') $*"
+    fi
+}
 
 parse_args()
 {
@@ -34,68 +114,72 @@ parse_args()
         --anti-rollback-version)
             if echo "$2" | grep -Eq '^0x?[0-9a-fA-F]+$'; then
                 ANTI_ROLLBACK_VERSION=$2
-                echo "FLAG: ANTI_ROLLBACK_VERSION: ${ANTI_ROLLBACK_VERSION}"
+                log_debug "FLAG: ANTI_ROLLBACK_VERSION: ${ANTI_ROLLBACK_VERSION}"
             else
-                echo >&2 "ERROR: ANTI_ROLLBACK_VERSION is not a valid hex number: $2.  Aborting."
+                log_error "ANTI_ROLLBACK_VERSION is not a valid hex number: $2.  Aborting."
                 exit 1
             fi
             shift
             shift
             ;;
+        --color)
+            FLAG_COLOR=1
+            log_debug "FLAG: COLOR: Enable"
+            shift
+            ;;
         --debug)
-            DEBUG=1
-            echo "FLAG: Debug: enabled"
+            LOG_LEVEL=${LOG_DEBUG}
+            log_debug "FLAG: Debug: enabled"
             shift
             ;;
         --keys-path)
             KEYS_PATH=$2
-            echo "FLAG: KEYS_PATH: ${KEYS_PATH}"
+            log_debug "FLAG: KEYS_PATH: ${KEYS_PATH}"
             shift
             shift
             ;;
         --keys-root-cert-filename)
             KEYS_ROOT_CERT=$2
-            echo "FLAG: KEYS_ROOT_CERT: ${KEYS_ROOT_CERT}"
+            log_debug "FLAG: KEYS_ROOT_CERT: ${KEYS_ROOT_CERT}"
             shift
             shift
             ;;
         --keys-ca-cert-filename)
             KEYS_CA_CERT=$2
-            echo "FLAG: KEYS_CA_CERT: ${KEYS_CA_CERT}"
+            log_debug "FLAG: KEYS_CA_CERT: ${KEYS_CA_CERT}"
             shift
             shift
             ;;
         --keys-ca-key-filename)
             KEYS_CA_KEY=$2
-            echo "FLAG: KEYS_CA_KEY: ${KEYS_CA_KEY}"
+            log_debug "FLAG: KEYS_CA_KEY: ${KEYS_CA_KEY}"
             shift
             shift
             ;;
         --keys-root-hash-filename)
             KEYS_ROOTS_HASH=$2
-            echo "FLAG: KEYS_ROOTS_HASH: ${KEYS_ROOTS_HASH}"
+            log_debug "FLAG: KEYS_ROOTS_HASH: ${KEYS_ROOTS_HASH}"
             shift
             shift
             ;;
         --out-dir)
             OUT_DIR="$(realpath -- "$2")"
-            echo "FLAG: OUT_DIR: ${OUT_DIR}"
+            log_debug "FLAG: OUT_DIR: ${OUT_DIR}"
             shift
             shift
             ;;
         --quiet)
-            QUIET=1
-            echo "FLAG: Quiet mode"
+            LOG_LEVEL=${LOG_ERROR}
             shift
             ;;
         --root-cert-totalnum)
             case $2 in
                 1)
                     ROOT_CERT_TOTALNUM=$2
-                    echo "FLAG: ROOT_CERT_TOTALNUM: ${ROOT_CERT_TOTALNUM}"
+                    log_debug "FLAG: ROOT_CERT_TOTALNUM: ${ROOT_CERT_TOTALNUM}"
                     ;;
                 *)
-                    echo >&2 "ERROR: ROOT_CERT_TOTALNUM values can only be 1.  Aborting."
+                    log_error "ROOT_CERT_TOTALNUM values can only be 1.  Aborting."
                     exit 1
                     ;;
             esac
@@ -104,13 +188,13 @@ parse_args()
             ;;
         --sectoolv2)
             SECTOOL=$2
-            echo "FLAG: SECTOOL: ${SECTOOL}"
+            log_debug "FLAG: SECTOOL: ${SECTOOL}"
             shift
             shift
             ;;
         --security-profile)
             SECURITY_PROFILE=$2
-            echo "FLAG: SECURITY_PROFILE: ${SECURITY_PROFILE}"
+            log_debug "FLAG: SECURITY_PROFILE: ${SECURITY_PROFILE}"
             shift
             shift
             ;;
@@ -118,10 +202,10 @@ parse_args()
             case $2 in
                 0 | 1 | 2 | 3)
                     SIGNING_KEY_INDEX=$2
-                    echo "FLAG: SIGNING_KEY_INDEX: ${SIGNING_KEY_INDEX}"
+                    log_debug "FLAG: SIGNING_KEY_INDEX: ${SIGNING_KEY_INDEX}"
                     ;;
                 *)
-                    echo >&2 "ERROR: SIGNING_KEY_INDEX values can be 0,1,2 or 3: $2.  Aborting."
+                    log_error "SIGNING_KEY_INDEX values can be 0,1,2 or 3: $2.  Aborting."
                     exit 1
                     ;;
             esac
@@ -130,7 +214,7 @@ parse_args()
             ;;
         --uefi-keys-path)
             UEFI_KEYS_PATH=$2
-            echo "FLAG: UEFI_KEYS_PATH: ${UEFI_KEYS_PATH}"
+            log_debug "FLAG: UEFI_KEYS_PATH: ${UEFI_KEYS_PATH}"
             shift
             shift
             ;;
@@ -142,6 +226,7 @@ parse_args()
             echo "Usage parameters:"
             echo "--anti-rollback-version: hex value supplied to 'sectoolsv2 secure-image' --anti-rollback-version param"
             echo "  (default: ${ANTI_ROLLBACK_VERSION})"
+            echo "--color: enable color logging"
             echo "--debug: enables debug logging"
             echo "--keys-path: path to keys directory generated by genkeys script (default: ${KEYS_PATH}"
             echo "--keys-root-cert-filename: root cert filename (default: ${KEYS_ROOT_CERT})"
@@ -166,19 +251,6 @@ parse_args()
 
 parse_args "$@"
 
-debug_log()
-{
-    if [ "${DEBUG}" -eq 1 ]; then
-        echo "DEBUG: $1"
-    fi
-}
-
-log()
-{
-    if [ "${QUIET}" -ne 1 ]; then
-        echo "$1"
-    fi
-}
 
 version_greater_equal()
 {
@@ -187,46 +259,46 @@ version_greater_equal()
 
 sign_verify()
 {
-    debug_log "Found $1"
+    log_debug "Found $1"
 
     file="$(basename $1)"
     filedir="$(dirname "$1")"
 
     sign_id=$(${SECTOOL} secure-image --inspect $1 | grep "| Software ID:" | cut -d'|' -f3)
     if [ -z "${sign_id}" ]; then
-        log "> WARN: $1 does not contain signatures.  Skipping."
+        log_warn "$1 does not contain signatures.  Skipping."
         return 0
     fi
 
     # Lookup the IMAGE-ID from mapping
     IMAGE_ID=$(echo "${IMAGE_ID_MAPPING}" | grep "${file}" | cut -d' ' -f2)
     PIL_SPLIT_FLAG=$(echo "${IMAGE_ID_MAPPING}" | grep "${file}" | cut -d' ' -f3)
-    debug_log "> IMAGE_ID: ${IMAGE_ID}"
+    log_debug "> IMAGE_ID: ${IMAGE_ID}"
     if [ -z "${IMAGE_ID}" ] || [ "${IMAGE_ID}" = "UNKNOWN" ]; then
-        echo >&2 "ERROR: Unable to find IMAGE-ID mapping for ${file}.  Aborting."
+        log_error "Unable to find IMAGE-ID mapping for ${file}.  Aborting."
         exit 1
     fi
 
     if [ "${IMAGE_ID}" = "SKIP" ]; then
-        log "Skip signing of ${file}"
+        log_warn "Skip signing of ${file}"
         return 0
     fi
 
     # Check to make sure the IMAGE_ID is valid for the supplied security-profile
     if echo "${VALID_IMAGE_ID}" | grep "${IMAGE_ID}" >/dev/null 2>&1; then
-        debug_log "> ${IMAGE_ID} is a valid IMAGE_ID"
+        log_debug "${IMAGE_ID} is a valid IMAGE_ID"
     else
-        echo >&2 "WARN: IMAGE_ID(${IMAGE_ID}) is not valid for this security-profile(${SECURITY_PROFILE}).  Skipping."
+        log_warn "IMAGE_ID(${IMAGE_ID}) is not valid for this security-profile(${SECURITY_PROFILE}).  Skipping."
         return 0
     fi
 
     if [ "${PIL_SPLIT_FLAG}" -eq "1" ]; then
-        debug_log "> Found PIL-SPLIT flag for $1.  Cleaning up fragments."
+        log_debug "> Found PIL-SPLIT flag for $1.  Cleaning up fragments."
         rm ${filedir}/${file%.*}.mdt
         rm ${filedir}/${file%.*}.b*
     fi
 
-    log "Signing $1"
+    log_debug "Signing $1"
     ${SECTOOL} secure-image ${VERBOSE} \
         --sign $1 --image-id=${IMAGE_ID} \
         --security-profile ${SECURITY_PROFILE} \
@@ -241,76 +313,76 @@ sign_verify()
         ${SCRIPT_PATH}/bin/pil-splitter $1 ${filedir}/${file%.*}.mdt
     fi
 
-    log "> Verifying root hash of $1"
+    log_debug "Verifying root hash of $1"
     ${SECTOOL} secure-image ${VERBOSE} --verify-root ${ROOT_CERT_HASH} $1
     if [ $? -ne 0 ]; then
-        echo >&2 "ERROR: Root hash of $1 failed verification.  Aborting."
+        log_error "Root hash of $1 failed verification.  Aborting."
         exit 1
     fi
 
     # verify pil-split file
     if [ "${PIL_SPLIT_FLAG}" -eq "1" ]; then
         mdt_file="${filedir}/${file%.*}.mdt"
-        log "> Verifying root hash of ${mdt_file}"
+        log_debug "Verifying root hash of ${mdt_file}"
         ${SECTOOL} secure-image ${VERBOSE} --verify-root ${ROOT_CERT_HASH} ${mdt_file}
         if [ $? -ne 0 ]; then
-            echo >&2 "ERROR: Root hash of ${mdt_file} failed verification.  Aborting."
+            log_error "Root hash of ${mdt_file} failed verification.  Aborting."
             exit 1
         fi
     fi
 
-    log "> Verified."
+    log_ok "Verified."
 }
 
-log "Check for dtc (device-tree compiler)"
-command -v dtc >/dev/null 2>&1 || { echo >&2 "Missing dtc command.  Aborting."; exit 1; }
-log "> dtc found."
+log_debug "Check for dtc (device-tree compiler)"
+command -v dtc >/dev/null 2>&1 || { log_error "Missing dtc command.  Aborting."; exit 1; }
+log_debug "dtc found."
 
-log "Check for python3 3.x"
-command -v python3 >/dev/null 2>&1 || { echo >&2 "Missing python3.  Aborting."; exit 1; }
-log "> python3 found."
+log_debug "Check for python3 3.x"
+command -v python3 >/dev/null 2>&1 || { log_error "Missing python3.  Aborting."; exit 1; }
+log_debug "python3 found."
 
 PYTHON_VERSION=$(python3 --version | cut -d' ' -f2)
-log "Check python3 version (${PYTHON_VERSION}) >= ${MIN_PYTHON_VER}"
-version_greater_equal "${PYTHON_VERSION}" ${MIN_PYTHON_VER} || { echo >&2 "Need at least python3 ${MIN_PYTHON_VER}.  Aborting."; exit 1; }
-log "> python3 version == ${PYTHON_VERSION}"
+log_debug "Check python3 version (${PYTHON_VERSION}) >= ${MIN_PYTHON_VER}"
+version_greater_equal "${PYTHON_VERSION}" ${MIN_PYTHON_VER} || { log_error "Need at least python3 ${MIN_PYTHON_VER}.  Aborting."; exit 1; }
+log_debug "python3 version == ${PYTHON_VERSION}"
 
 ## TODO: check for the following Python3 packages:
 ## pip3 install --user python-magic OR sudo apt install python3-magic
 ## pip3 install --user pyelftools OR sudo apt install python3-pyelftools
 
 if [ ! -z "${UEFI_KEYS_PATH}" ]; then
-    log "Check for sbsign command"
-    command -v sbsign >/dev/null 2>&1 || { echo >&2 "Missing sbsign command needed for UEFI signing.  Aborting."; exit 1; }
-    log "> sbsign command found."
+    log_debug "Check for sbsign command"
+    command -v sbsign >/dev/null 2>&1 || { log_error "Missing sbsign command needed for UEFI signing.  Aborting."; exit 1; }
+    log_debug "sbsign command found."
 fi
 
-[ -z "${SECTOOL}"  ] && { echo >&2 "ERROR: Missing --sectoolv2 parameter.  Aborting."; exit 1; }
-[ -z "${SECURITY_PROFILE}"  ] && { echo >&2 "ERROR: Missing --security-profile parameter.  Aborting."; exit 1; }
-[ ! -f "${SECURITY_PROFILE}"  ] && { echo >&2 "ERROR: File for security-profile could not be found: ${SECURITY_PROFILE}  Aborting."; exit 1; }
-[ ! -d "${KEYS_PATH}"  ] && { echo >&2 "ERROR: Directory for KEYS_PATH is not found: ${KEYS_PATH}.  Use --keys-path to set.  Aborting."; exit 1; }
-[ ! -d "${OUT_DIR}" ] && { echo >&2 "ERROR: OUT_DIR not found: ${OUT_DIR}.  Aborting."; exit 1; }
-[ ! -z "${UEFI_KEYS_PATH}" ] && [ ! -d "${UEFI_KEYS_PATH}"  ] && { echo >&2 "ERROR: Directory for UEFI_KEYS_PATH is not found: ${UEFI_KEYS_PATH}.  Use --uefi-keys-path to set.  Aborting."; exit 1; }
+[ -z "${SECTOOL}"  ] && { log_error "Missing --sectoolv2 parameter.  Aborting."; exit 1; }
+[ -z "${SECURITY_PROFILE}"  ] && { log_error "Missing --security-profile parameter.  Aborting."; exit 1; }
+[ ! -f "${SECURITY_PROFILE}"  ] && { log_error "File for security-profile could not be found: ${SECURITY_PROFILE}  Aborting."; exit 1; }
+[ ! -d "${KEYS_PATH}"  ] && { log_error "Directory for KEYS_PATH is not found: ${KEYS_PATH}.  Use --keys-path to set.  Aborting."; exit 1; }
+[ ! -d "${OUT_DIR}" ] && { log_error "OUT_DIR not found: ${OUT_DIR}.  Aborting."; exit 1; }
+[ ! -z "${UEFI_KEYS_PATH}" ] && [ ! -d "${UEFI_KEYS_PATH}"  ] && { log_error "Directory for UEFI_KEYS_PATH is not found: ${UEFI_KEYS_PATH}.  Use --uefi-keys-path to set.  Aborting."; exit 1; }
 
 if [ "${SIGNING_KEY_INDEX}" -ge "${ROOT_CERT_TOTALNUM}" ]; then
-        echo >&2 "ERROR: --signing-key-index(${SIGNING_KEY_INDEX}) cannot be equal or greater to --root-cert-totalnum(${ROOT_CERT_TOTALNUM}).  Aborting."
+        log_error "--signing-key-index(${SIGNING_KEY_INDEX}) cannot be equal or greater to --root-cert-totalnum(${ROOT_CERT_TOTALNUM}).  Aborting."
         exit 1
 fi
 
 if [ ! -f "${KEYS_PATH}/${KEYS_ROOTS_HASH}" ]; then
-    echo >&2 "ERROR: Cannot find roots hash file: ${KEYS_PATH}/${KEYS_ROOTS_HASH}.  Aborting."
+    log_error "Cannot find roots hash file: ${KEYS_PATH}/${KEYS_ROOTS_HASH}.  Aborting."
     exit 1
 fi
-log "Reading the sha384 hash of the root certificate(s)."
+log_debug "Reading the sha384 hash of the root certificate(s)."
 ROOT_CERT_HASH="0x$(cat ${KEYS_PATH}/${KEYS_ROOTS_HASH} | cut -d' ' -f2)"
-log "> Done"
+log_debug "> Done"
 
 # Define a newline
 newline="
 "
 
 # Get list of valid image IDs from the security profile
-log "Creating a list of valid IMAGE-IDs"
+log_debug "Creating a list of valid IMAGE-IDs"
 OIFS="${IFS}"
 IFS=${newline}
 VALID_IMAGE_ID=""
@@ -322,11 +394,11 @@ do
         continue
     fi
     NEW_ID=$(echo "${line}" | cut -c4-)
-    debug_log "> Adding: ${NEW_ID}"
+    log_debug "> Adding: ${NEW_ID}"
     VALID_IMAGE_ID="${VALID_IMAGE_ID}${NEW_ID}${newline}"
 done
 IFS="${OIFS}"
-log "> Done"
+log_debug "> Done"
 
 # <filename> <image_id> <pil-split-flag>
 IMAGE_ID_MAPPING="\
@@ -371,7 +443,7 @@ while [ "${key}" -lt ${ROOT_CERT_TOTALNUM} ]
 do
     KEY_FILENAME=$(echo "${KEYS_PATH}/${KEYS_ROOT_CERT}" | sed "s/###/${key}/g")
     if [ ! -f "${KEY_FILENAME}" ]; then
-        echo >&2 "ERROR: Cannot find root certificate: ${KEY_FILENAME}.  Aborting."
+        log_error "Cannot find root certificate: ${KEY_FILENAME}.  Aborting."
         exit 1
     fi
     ROOT_CERT_LIST="${ROOT_CERT_LIST} ${KEY_FILENAME}"
@@ -381,13 +453,13 @@ done
 
 KEYS_CA_KEY_FILENAME=$(echo "${KEYS_PATH}/${KEYS_CA_KEY}" | sed "s/###/${SIGNING_KEY_INDEX}/g")
 if [ ! -f "${KEYS_CA_KEY_FILENAME}" ]; then
-    echo >&2 "ERROR: Cannot find CA key: ${KEYS_CA_KEY_FILENAME}.  Aborting."
+    log_error "Cannot find CA key: ${KEYS_CA_KEY_FILENAME}.  Aborting."
     exit 1
 fi
 
 KEYS_CA_CERT_FILENAME=$(echo "${KEYS_PATH}/${KEYS_CA_CERT}" | sed "s/###/${SIGNING_KEY_INDEX}/g")
 if [ ! -f "${KEYS_CA_CERT_FILENAME}" ]; then
-    echo >&2 "ERROR: Cannot find CA certificate: ${KEYS_CA_CERT_FILENAME}.  Aborting."
+    log_error "Cannot find CA certificate: ${KEYS_CA_CERT_FILENAME}.  Aborting."
     exit 1
 fi
 
@@ -398,27 +470,27 @@ if [ "${ROOT_CERT_TOTALNUM}" -gt 1 ]; then
 fi
 
 VERBOSE=""
-if [ "${DEBUG}" -eq 1 ]; then
+if [ "${LOG_LEVEL}" -ge "${LOG_DEBUG}" ]; then
     VERBOSE="--verbose"
 fi
 
 if [ -f ${OUT_DIR}/xbl_config.elf ]; then
-    log "Adding FMP root certificate to xbl_config.elf."
-    debug_log "> Clear old xbl_config-temp dir"
+    log_info "Adding FMP root certificate to xbl_config.elf."
+    log_debug "> Clear old xbl_config-temp dir"
     rm -rf ${OUT_DIR}/xbl_config-temp
-    debug_log "> Dumping contents of xbl_config.elf to ${OUT_DIR}/xbl_config-temp"
+    log_debug "> Dumping contents of xbl_config.elf to ${OUT_DIR}/xbl_config-temp"
     ${SECTOOL} secure-image --dump ${OUT_DIR}/xbl_config-temp ${OUT_DIR}/xbl_config.elf
     file_list=$(find ${OUT_DIR}/xbl_config-temp/segments -iname "*.bin")
     found_dtb=0
     for file in ${file_list}
     do
-        debug_log "> Checking ${file} for DTB values"
+        log_debug "> Checking ${file} for DTB values"
         if [ "$(hexdump -n 4 -e '4/1 "%02x"' ${file})" = "d00dfeed" ]; then
             # check for QcCapsuleRootCert which we need to replace
             grep --quiet "QcCapsuleRootCert" -F ${file}
             if [ "$?" -eq "0" ]; then
                 found_dtb=1
-                log "> Setting QcCapsuleRootCert in ${file}"
+                log_debug "> Setting QcCapsuleRootCert in ${file}"
                 # generate a dts from the post-DDR dtb
                 dtc -I dtb -O dts ${file} > ${file}.dts
                 sed "/QcCapsuleRootCert/ { s/<[^>]*>/<$(cat ${KEYS_PATH}/${FMP_CA_DIR}/${FMP_ROOT_HEX_FILE})>/g }" ${file}.dts > ${file}.new.dts
@@ -432,109 +504,109 @@ if [ -f ${OUT_DIR}/xbl_config.elf ]; then
 
     # if changed recombine
     if [ "${found_dtb}" -eq "1" ]; then
-        log "> Combining segments back into xbl_config.elf."
+        log_debug "> Combining segments back into xbl_config.elf."
         python3 ${SCRIPT_PATH}/cbsp-boot-utilities/uefi_capsule_generation/dump_dtb_xblconfig.py ${OUT_DIR}/xbl_config.elf --replace-dtb 8 \
             ${file}.new ${OUT_DIR}/xbl_config_patched.elf
         mv ${OUT_DIR}/xbl_config_patched.elf ${OUT_DIR}/xbl_config.elf
     else
-        log "> WARNING: No post-DDR dtb was found! No changes made to xbl_config.elf."
+        log_warn "> No post-DDR dtb was found! No changes made to xbl_config.elf."
     fi
-    debug_log "> Cleaning up temp files"
+    log_debug "> Cleaning up temp files"
     rm -rf ${OUT_DIR}/xbl_config-temp
 
-    log "> Done"
+    log_ok "> Done"
 else
-    log "WARNING: No xbl_config.efl was found.  Skipping processing."
+    log_warn "No xbl_config.efl was found.  Skipping processing."
 fi
 
-log "Searching for MDT files without matching MBN files."
+log_info "Searching for MDT files without matching MBN files."
 file_list=$(find ${OUT_DIR} -iname "*.mdt")
 mbn_create_list=""
 for file in ${file_list}
 do
     mbn_file=$(basename "${file%.*}.mbn")
     mbn_base=$(dirname "${file}")
-    debug_log "> Checking for ${mbn_base}/${mbn_file}"
+    log_debug "> Checking for ${mbn_base}/${mbn_file}"
     if [ ! -f "${mbn_base}/${mbn_file}" ]; then
-        log "> ${mbn_base}/${mbn_file} not found!  Creating from MDT fragments."
+        log_debug "> ${mbn_base}/${mbn_file} not found!  Creating from MDT fragments."
         ${SCRIPT_PATH}/bin/pil-squasher "${mbn_base}/${mbn_file}" ${file}
 	mbn_create_list="${mbn_create_list} ${mbn_base}/${mbn_file}"
     else
-        debug_log "> Found ${mbn_base}/${mbn_file}"
+        log_debug "> Found ${mbn_base}/${mbn_file}"
     fi
 done
 
-log "Searching for MBN files to sign."
+log_info "Searching for MBN files to sign."
 file_list=$(find ${OUT_DIR} -iname "*.mbn")
 for file in ${file_list}
 do
     sign_verify "${file}"
 done
 
-log "Searching for ELF files to sign."
+log_info "Searching for ELF files to sign."
 file_list=$(find ${OUT_DIR} -iname "*.elf")
 for file in ${file_list}
 do
     sign_verify ${file} 0
 done
 
-log "Image signing complete."
+log_ok "Image signing complete."
 
 # Sign efi DTB
 if [ ! -z "${UEFI_KEYS_PATH}" ]; then
-    log "UEFI: Start signing handing for keys: ${UEFI_KEYS_PATH}"
+    log_info "UEFI: Start signing handing for keys: ${UEFI_KEYS_PATH}"
     mkdir -p ./uefi-mnt/
 
     # if missing, copy efi.bin into OUT_DIR for modification
     if [ ! -f ${OUT_DIR}/efi.bin ]; then
-        debug_log "> Copying efi.bin to ${OUT_DIR} for modification."
+        log_debug "> Copying efi.bin to ${OUT_DIR} for modification."
         cp efi.bin ${OUT_DIR}/efi.bin
     fi
 
     # modify efi.bin
-    debug_log "> Mounting efi.bin for modification"
+    log_debug "> Mounting efi.bin for modification"
     sudo mount -t vfat -o loop ${OUT_DIR}/efi.bin ./uefi-mnt/
-    log "UEFI: efi.bin: Signing EFI/BOOT/bootaa64.efi"
+    log_info "UEFI: efi.bin: Signing EFI/BOOT/bootaa64.efi"
     sudo sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ./uefi-mnt/EFI/BOOT/bootaa64.efi --output ./uefi-mnt/EFI/BOOT/bootaa64.efi
     sync
-    log "UEFI: Searching for vmlinuz files to sign."
+    log_info "UEFI: Searching for vmlinuz files to sign."
     file_list=$(find  ./uefi-mnt/ -iname "*vmlinuz*")
     for file in ${file_list}
     do
-        debug_log "> Signing ${file} with DB key/cert.."
+        log_debug "> Signing ${file} with DB key/cert.."
         sudo sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ${file} --output ${file}
     done
     sync
-    debug_log "> Unmount efi.bin"
+    log_debug "> Unmount efi.bin"
     sudo umount ./uefi-mnt
     sync
 
     # if missing, copy dtb.bin into OUT_DIR for signing
     if [ ! -f ${OUT_DIR}/dtb.bin ]; then
-        debug_log "> Copying dtb.bin to ${OUT_DIR} for modification."
+        log_debug "> Copying dtb.bin to ${OUT_DIR} for modification."
         cp dtb.bin ${OUT_DIR}/dtb.bin
     fi
 
     # modify dtb.bin
-    debug_log "> Mounting dtb.bin for modification"
+    log_debug "> Mounting dtb.bin for modification"
     sudo mount -t vfat -o loop ${OUT_DIR}/dtb.bin ./uefi-mnt/
-    log "UEFI: dtb.bin: Creating combined-dtb.sig"
+    log_info "UEFI: dtb.bin: Creating combined-dtb.sig"
     sudo openssl cms -sign -inkey ${UEFI_KEYS_PATH}/DB.key -signer ${UEFI_KEYS_PATH}/DB.crt -binary -in ./uefi-mnt/combined-dtb.dtb --out ./uefi-mnt/combined-dtb.sig -outform DER
     sync
-    debug_log "> Unmount dtb.bin"
+    log_debug "> Unmount dtb.bin"
     sudo umount ./uefi-mnt
     sync
 
     rmdir ./uefi-mnt
 
     # look for vmlinuz in rootfs mount
-    log "Searching for vmlinuz files to sign."
+    log_info "Searching for vmlinuz files to sign."
     file_list=$(find ${OUT_DIR} -iname "*vmlinuz*")
     for file in ${file_list}
     do
-        debug_log "> Signing ${file} with DB key/cert.."
+        log_debug "> Signing ${file} with DB key/cert.."
         sudo sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ${file} --output ${file}
     done
 
-    log "> Done."
+    log_ok "> Done."
 fi
