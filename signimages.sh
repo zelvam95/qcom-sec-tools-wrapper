@@ -264,7 +264,7 @@ sign_verify()
     file="$(basename $1)"
     filedir="$(dirname "$1")"
 
-    sign_id=$(${SECTOOL} secure-image --inspect $1 | grep "| Software ID:" | cut -d'|' -f3)
+    sign_id=$(${SECTOOL} secure-image --inspect $1 | grep "| Software ID:" | cut -d'|' -f3 | head -n 1)
     if [ -z "${sign_id}" ]; then
         log_warn "Signatures not found in $1.  Skipping."
         return 0
