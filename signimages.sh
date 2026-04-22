@@ -42,6 +42,8 @@ LOG_INFO=2
 LOG_DEBUG=3
 
 # Flags
+RETURN_CODE=0
+FLAG_CONTINUE=0
 FLAG_COLOR=0
 LOG_LEVEL=${LOG_INFO}
 
@@ -126,6 +128,11 @@ parse_args()
         --color)
             FLAG_COLOR=1
             log_debug "FLAG: COLOR: Enable"
+            shift
+            ;;
+        --continue-on-error)
+            FLAG_CONTINUE=1
+            log_debug "FLAG: CONTINUE: Enable"
             shift
             ;;
         --debug)
@@ -240,6 +247,7 @@ parse_args()
             echo "--anti-rollback-version: hex value supplied to 'sectoolsv2 secure-image' --anti-rollback-version param"
             echo "  (default: ${ANTI_ROLLBACK_VERSION})"
             echo "--color: enable color logging"
+            echo "--continue-on-error: don't break when signing errors are encountered."
             echo "--debug: enables debug logging"
             echo "--fmp-path: path to the FMP keys used for capsule updates (default: ${FMP_PATH})"
             echo "--hw-ver: override the *_security_profile.xml value for HW version"
@@ -280,6 +288,16 @@ sign_verify()
     filedir="$(dirname "$1")"
 
     sign_id=$(${SECTOOL} secure-image --inspect $1 | grep "| Software ID:" | cut -d'|' -f3 | head -n 1)
+    RESPONSE=$?
+    if [ "${RESPONSE}" -ne 0 ]; then
+        log_error "secure-image inspect "Software ID" failed for $1."
+        if [ "${FLAG_CONTINUE}" -eq 0 ]; then
+            exit 1
+        else
+            RETURN_CODE=1
+            return 0
+        fi
+    fi
     if [ -z "${sign_id}" ]; then
         log_warn "Signatures not found in $1.  Skipping."
         return 0
@@ -287,10 +305,30 @@ sign_verify()
 
     MATCH=""
     bind_hw_ver=$(${SECTOOL} secure-image --inspect $1 | grep "| Bound to SoC Hardware Version" | cut -d'|' -f3 | head -n 1 | trim)
+    RESPONSE=$?
+    if [ "${RESPONSE}" -ne 0 ]; then
+        log_error "secure-image inspect "Hardware Version" failed for $1."
+        if [ "${FLAG_CONTINUE}" -eq 0 ]; then
+            exit 1
+        else
+            RETURN_CODE=1
+            return 0
+        fi
+    fi
     if [ "${bind_hw_ver}" = "False" ]; then
         MATCH="ANY"
     else
         sign_hw_ver=$(${SECTOOL} secure-image --inspect $1 | grep "| SoC Hardware Version" | cut -d'|' -f3 | head -n 1 | trim | tr '[:upper:]' '[:lower:]')
+        RESPONSE=$?
+        if [ "${RESPONSE}" -ne 0 ]; then
+            log_error "secure-image inspect "Hardware Version" failed for $1."
+            if [ "${FLAG_CONTINUE}" -eq 0 ]; then
+                exit 1
+            else
+                RETURN_CODE=1
+                return 0
+            fi
+        fi
         for word in ${sign_hw_ver}
         do
             if [[ "${HW_VER}" == *"[${word}]"* ]]; then
@@ -310,8 +348,13 @@ sign_verify()
     IMAGE_ID=$(echo "${IMAGE_ID_MAPPING}" | grep "${file}" | cut -d' ' -f2)
     PIL_SPLIT_FLAG=$(echo "${IMAGE_ID_MAPPING}" | grep "${file}" | cut -d' ' -f3)
     if [ -z "${IMAGE_ID}" ] || [ "${IMAGE_ID}" = "UNKNOWN" ]; then
-        log_error "IMAGE-ID mapping not found for ${file}.  Aborting."
-        exit 1
+        log_error "IMAGE-ID mapping not found for ${file}."
+        if [ "${FLAG_CONTINUE}" -eq 0 ]; then
+            exit 1
+        else
+            RETURN_CODE=1
+            return 0
+        fi
     fi
 
     if [[ "${IMAGE_ID}" == *SKIP:* ]]; then
@@ -351,7 +394,15 @@ sign_verify()
     RESPONSE=$?
     if [ "${RESPONSE}" -ne 0 ] || [ ! -z "${VERBOSE}" ]; then
         echo -e "${OUTPUT}"
-        [ "${RESPONSE}" -ne 0 ] && { log_error "Root hash of $1 failed verification.  Aborting."; exit 1; }
+        if [ "${RESPONSE}" -ne 0 ]; then
+            log_error "secure-image sign failed for $1."
+            if [ "${FLAG_CONTINUE}" -eq 0 ]; then
+                exit 1
+            else
+                RETURN_CODE=1
+                return 0
+            fi
+        fi
     fi
 
     if [ "${PIL_SPLIT_FLAG}" -eq 1 ]; then
@@ -359,7 +410,15 @@ sign_verify()
         RESPONSE=$?
         if [ "${RESPONSE}" -ne 0 ] || [ ! -z "${VERBOSE}" ]; then
             echo -e "${OUTPUT}"
-            [ "${RESPONSE}" -ne 0 ] && { log_error "pil-splitter failed.  Aborting."; exit 1; }
+            if [ "${RESPONSE}" -ne 0 ]; then
+                log_error "pil-splitter failed."
+                if [ "${FLAG_CONTINUE}" -eq 0 ]; then
+                    exit 1
+                else
+                    RETURN_CODE=1
+                    return 0
+                fi
+            fi
         fi
     fi
 
@@ -368,7 +427,15 @@ sign_verify()
     RESPONSE=$?
     if [ "${RESPONSE}" -ne 0 ] || [ ! -z "${VERBOSE}" ]; then
         echo -e "${OUTPUT}"
-        [ "${RESPONSE}" -ne 0 ] && { log_error "Root hash of $1 failed verification.  Aborting."; exit 1; }
+        if [ "${RESPONSE}" -ne 0 ]; then
+            log_error "secure-image verify of root cert hash failed for $1."
+            if [ "${FLAG_CONTINUE}" -eq 0 ]; then
+                exit 1
+            else
+                RETURN_CODE=1
+                return 0
+            fi
+        fi
     fi
 
     # verify pil-split file
@@ -379,7 +446,15 @@ sign_verify()
         RESPONSE=$?
         if [ "${RESPONSE}" -ne 0 ] || [ ! -z "${VERBOSE}" ]; then
             echo -e "${OUTPUT}"
-            [ "${RESPONSE}" -ne 0 ] && { log_error "Root hash of ${mdt_file} failed verification.  Aborting."; exit 1; }
+            if [ "${RESPONSE}" -ne 0 ]; then
+                log_error "secure-image verify of root cert hash failed for ${mdt_file}."
+                if [ "${FLAG_CONTINUE}" -eq 0 ]; then
+                    exit 1
+                else
+                    RETURN_CODE=1
+                    return 0
+                fi
+            fi
         fi
     fi
 
@@ -588,23 +663,34 @@ if [ -f "${OUT_DIR}/${XBL_CONFIG_FILENAME}" ] && [ -f "${FMP_PATH}/${FMP_ROOT_CE
     log_debug "> Clear old xbl_config-temp dir"
     rm -rf ${OUT_DIR}/xbl_config-temp
     log_debug "> Dumping contents of ${XBL_CONFIG_FILENAME} to ${OUT_DIR}/xbl_config-temp"
-    ${SECTOOL} secure-image --dump ${OUT_DIR}/xbl_config-temp ${OUT_DIR}/${XBL_CONFIG_FILENAME} > /dev/null
-    file_list=$(grep -l "QcCapsuleRootCert" ${OUT_DIR}/xbl_config-temp/segments/*.bin)
-    found_dtb=0
-    for file in ${file_list}
-    do
-        log_debug "> Checking ${file} for DTB values"
-        if [ "$(hexdump -n 4 -e '4/1 "%02x"' ${file})" = "d00dfeed" ]; then
-            found_dtb=1
-            log_debug "> Setting QcCapsuleRootCert in ${file}"
-            # generate a dts from the post-DDR dtb
-            dtc -I dtb -O dts ${file} > ${file}.dts
-            sed "/QcCapsuleRootCert/ { s/<[^>]*>/<$(cat ./tmp-fmp-root-cert-hex.inc)>/g }" ${file}.dts > ${file}.new.dts
-            # generate a 2-byte aligned dtb from the modified post-DDR dts
-            dtc -a 2 -I dts -O dtb ${file}.new.dts > ${file}.new
-            rm ${file}*dts
+    OUTPUT=$(${SECTOOL} secure-image --dump ${OUT_DIR}/xbl_config-temp ${OUT_DIR}/${XBL_CONFIG_FILENAME})
+    RESPONSE=$?
+    if [ "${RESPONSE}" -ne 0 ]; then
+        echo -e "${OUTPUT}"
+        log_error "secure-image dump failed for ${OUT_DIR}/${XBL_CONFIG_FILENAME}."
+        if [ "${FLAG_CONTINUE}" -eq 0 ]; then
+            exit 1
+        else
+            RETURN_CODE=1
         fi
-    done
+    else
+        file_list=$(grep -l "QcCapsuleRootCert" ${OUT_DIR}/xbl_config-temp/segments/*.bin)
+        found_dtb=0
+        for file in ${file_list}
+        do
+            log_debug "> Checking ${file} for DTB values"
+            if [ "$(hexdump -n 4 -e '4/1 "%02x"' ${file})" = "d00dfeed" ]; then
+                found_dtb=1
+                log_debug "> Setting QcCapsuleRootCert in ${file}"
+                # generate a dts from the post-DDR dtb
+                dtc -I dtb -O dts ${file} > ${file}.dts
+                sed "/QcCapsuleRootCert/ { s/<[^>]*>/<$(cat ./tmp-fmp-root-cert-hex.inc)>/g }" ${file}.dts > ${file}.new.dts
+                # generate a 2-byte aligned dtb from the modified post-DDR dts
+                dtc -a 2 -I dts -O dtb ${file}.new.dts > ${file}.new
+                rm ${file}*dts
+            fi
+        done
+    fi
 
     # cleanup tmp file
     rm ./tmp-fmp-root-cert-hex.inc
@@ -613,8 +699,19 @@ if [ -f "${OUT_DIR}/${XBL_CONFIG_FILENAME}" ] && [ -f "${FMP_PATH}/${FMP_ROOT_CE
     if [ "${found_dtb}" -eq "1" ]; then
         log_debug "> Combining segments back into ${XBL_CONFIG_FILENAME}."
         log_debug "> python3 ${SCRIPT_PATH}/cbsp-boot-utilities/uefi_capsule_generation/dump_dtb_xblconfig.py ${OUT_DIR}/${XBL_CONFIG_FILENAME} --replace-dtb 8 ${file}.new ${OUT_DIR}/${XBL_CONFIG_FILENAME}.patched"
-        python3 ${SCRIPT_PATH}/cbsp-boot-utilities/uefi_capsule_generation/dump_dtb_xblconfig.py ${OUT_DIR}/${XBL_CONFIG_FILENAME} --replace-dtb 8 \
-            ${file}.new ${OUT_DIR}/${XBL_CONFIG_FILENAME}.patched
+        OUTPUT=$(python3 ${SCRIPT_PATH}/cbsp-boot-utilities/uefi_capsule_generation/dump_dtb_xblconfig.py ${OUT_DIR}/${XBL_CONFIG_FILENAME} --replace-dtb 8 \
+            ${file}.new ${OUT_DIR}/${XBL_CONFIG_FILENAME}.patched)
+        RESPONSE=$?
+        if [ "${RESPONSE}" -ne 0 ]; then
+            echo -e "${OUTPUT}"
+            log_error "xblconfig_parser replace failed for ${OUT_DIR}/${XBL_CONFIG_FILENAME}."
+            if [ "${FLAG_CONTINUE}" -eq 0 ]; then
+                rm -rf ${OUT_DIR}/xbl_config-temp
+                exit 1
+            else
+                RETURN_CODE=1
+            fi
+        fi
         mv ${OUT_DIR}/${XBL_CONFIG_FILENAME}.patched ${OUT_DIR}/${XBL_CONFIG_FILENAME}
     else
         log_warn "> No post-DDR dtb was found! No changes made to ${XBL_CONFIG_FILENAME}."
@@ -642,9 +739,17 @@ do
         RESPONSE=$?
         if [ "${RESPONSE}" -ne 0 ] || [ ! -z "${VERBOSE}" ]; then
             echo -e "${OUTPUT}"
-            [ "${RESPONSE}" -ne 0 ] && { log_error "pil-squasher for ${file}.  Aborting."; exit 1; }
         fi
-	mbn_create_list="${mbn_create_list} ${mbn_base}/${mbn_file}"
+        if [ "${RESPONSE}" -ne 0 ]; then
+            log_error "pil-squasher failed for ${file}."
+            if [ "${FLAG_CONTINUE}" -eq 0 ]; then
+                exit 1
+            else
+                RETURN_CODE=1
+            fi
+        else
+            mbn_create_list="${mbn_create_list} ${mbn_base}/${mbn_file}"
+        fi
     else
         log_debug "> Found ${mbn_base}/${mbn_file}"
     fi
@@ -680,6 +785,10 @@ if [ ! -z "${UEFI_KEYS_PATH}" ]; then
     # modify efi.bin
     log_debug "> Mounting efi.bin for modification"
     sudo mount -t vfat -o loop ${OUT_DIR}/efi.bin ./uefi-mnt/
+    RESPONSE=$?
+    if [ "${RESPONSE}" -ne 0 ]; then
+        exit 1
+    fi
     log_info "UEFI: efi.bin: Signing EFI/BOOT/bootaa64.efi"
     sudo sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ./uefi-mnt/EFI/BOOT/bootaa64.efi --output ./uefi-mnt/EFI/BOOT/bootaa64.efi
     sync
@@ -688,8 +797,24 @@ if [ ! -z "${UEFI_KEYS_PATH}" ]; then
     for file in ${file_list}
     do
         log_debug "> Signing ${file} with DB key/cert.."
-        sudo sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ${file} --output ${file}
+        OUTPUT=$(sudo sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ${file} --output ${file} 2>&1)
+        RESPONSE=$?
+        if [ "${RESPONSE}" -ne 0 ] || [ ! -z "${VERBOSE}" ]; then
+            echo -e "${OUTPUT}"
+        fi
+        if [ "${RESPONSE}" -ne 0 ]; then
+            log_error "UEFI: Failed to sign ${FILEPATH}"
+            if [ "${FLAG_CONTINUE}" -eq 0 ]; then
+                sudo umount ./uefi-mnt
+                exit 1
+            else
+                RETURN_CODE=1
+            fi
+        else
+            log_info "SIGNED (efi.bin): ${FILEPATH}"
+        fi
     done
+
     sync
     log_debug "> Unmount efi.bin"
     sudo umount ./uefi-mnt
@@ -704,6 +829,10 @@ if [ ! -z "${UEFI_KEYS_PATH}" ]; then
     # modify dtb.bin
     log_debug "> Mounting dtb.bin for modification"
     sudo mount -t vfat -o loop ${OUT_DIR}/dtb.bin ./uefi-mnt/
+    RESPONSE=$?
+    if [ "${RESPONSE}" -ne 0 ]; then
+        exit 1
+    fi
     log_info "UEFI: dtb.bin: Creating combined-dtb.sig"
     sudo openssl cms -sign -inkey ${UEFI_KEYS_PATH}/DB.key -signer ${UEFI_KEYS_PATH}/DB.crt -binary -in ./uefi-mnt/combined-dtb.dtb --out ./uefi-mnt/combined-dtb.sig -outform DER
     sync
@@ -719,8 +848,22 @@ if [ ! -z "${UEFI_KEYS_PATH}" ]; then
     for file in ${file_list}
     do
         log_debug "> Signing ${file} with DB key/cert.."
-        sudo sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ${file} --output ${file}
+        OUTPUT=$(sudo sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ${file} --output ${file})
+        RESPONSE=$?
+        if [ "${RESPONSE}" -ne 0 ] || [ ! -z "${VERBOSE}" ]; then
+            echo -e "${OUTPUT}"
+            if [ "${RESPONSE}" -ne 0 ]; then
+                log_error "UEFI: Failed to sign ${file}"
+                if [ "${FLAG_CONTINUE}" -eq 0 ]; then
+                    exit 1
+                else
+                    RETURN_CODE=1
+                fi
+            fi
+        fi
     done
 
     log_ok "> Completed UEFI handling"
 fi
+
+exit ${RETURN_CODE}
