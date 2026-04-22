@@ -274,7 +274,7 @@ parse_args()
             echo "--keys-root-hash-filename: roots hash filename (default: ${KEYS_ROOTS_HASH})"
             echo "--out-dir: output directory for signed images (default: ${OUT_DIR})"
             echo "--quiet: disable normal logging"
-            echo "--root-cert-totalnum: set # of root certs to use. 1-4 allowed (default: 4)"
+            echo "--root-cert-totalnum: set # of root certs to use. 1-4 allowed (default: ${ROOT_CERT_TOTALNUM})"
             echo "--sectoolv2: path to sectoolv2 binary"
             echo "--security-profile: path to *_security_profile.xml"
             echo "--signing-key-index: which CA key index to use for signing (default: ${SIGNING_KEY_INDEX})"
@@ -545,7 +545,7 @@ log_debug "python3 version == ${PYTHON_VERSION}"
 if [ ! -z "${UEFI_KEYS_PATH}" ]; then
     command -v udisksctl >/dev/null 2>&1 || { log_error "Missing udisksctl command needed to mount UEFI artifacts (sudo apt install udisks2).  Aborting."; exit 1; }
     log_debug "udisksctl command found."
-    command -v sbsign >/dev/null 2>&1 || { log_error "Missing sbsign command needed for UEFI signing.  Aborting."; exit 1; }
+    command -v sbsign >/dev/null 2>&1 || { log_error "Missing sbsign command needed for UEFI signing (sudo apt install sbsigntool).  Aborting."; exit 1; }
     log_debug "sbsign command found."
 fi
 
@@ -794,7 +794,7 @@ else
     [ ! -f "${FMP_PATH}/${FMP_ROOT_CER_FILE}" ] && { log_warn "No FMP root certificate found.  Skipping processing."; }
 fi
 
-log_info "Searching for MDT files without matching MBN files."
+log_info "Searching for MDT files without matching MBN files ..."
 file_list=$(find ${OUT_DIR} -iname "*.mdt")
 mbn_create_list=""
 for file in ${file_list}
