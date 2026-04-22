@@ -908,27 +908,40 @@ if [ ! -z "${UEFI_KEYS_PATH}" ]; then
     cleanup_mount ${LOOP_DEVICE}
     log_debug "> Unmounted efi.bin"
 
-    # if missing, copy dtb.bin into OUT_DIR for signing
+    # if missing, copy dtb.bin into OUT_DIR for modification
     if [ ! -f ${OUT_DIR}/dtb.bin ]; then
-        log_debug "> Copying dtb.bin to ${OUT_DIR} for modification."
+        log_debug "UEFI: Copying dtb.bin to ${OUT_DIR} for modification."
         cp dtb.bin ${OUT_DIR}/dtb.bin
     fi
 
-    # modify dtb.bin
-    log_debug "> Mounting dtb.bin for modification"
-    sudo mount -t vfat -o loop ${OUT_DIR}/dtb.bin ./uefi-mnt/
+    setup_mount ${OUT_DIR}/dtb.bin
     RESPONSE=$?
     if [ "${RESPONSE}" -ne 0 ]; then
         exit 1
     fi
-    log_info "UEFI: dtb.bin: Creating combined-dtb.sig"
-    sudo openssl cms -sign -inkey ${UEFI_KEYS_PATH}/DB.key -signer ${UEFI_KEYS_PATH}/DB.crt -binary -in ./uefi-mnt/combined-dtb.dtb --out ./uefi-mnt/combined-dtb.sig -outform DER
-    sync
-    log_debug "> Unmount dtb.bin"
-    sudo umount ./uefi-mnt
-    sync
 
-    rmdir ./uefi-mnt
+    file_list=$(find ${LOOP_MOUNT} -iname "combined-dtb.dtb" -o -iname "qclinux_fit.img")
+    if [ -z "${file_list}" ]; then
+        log_error "UEFI: Unable to find dtb.bin artifact for signing."
+        if [ "${FLAG_CONTINUE}" -eq 0 ]; then
+            exit 1
+        else
+            RETURN_CODE=1
+        fi
+    else
+        for file in ${file_list}
+        do
+            SIGNFILE=${file%.dtb}
+            SIGNFILE=${SIGNFILE%.img}
+            SIGNFILE=${SIGNFILE}.sig
+            FILEPATH="$(echo "${SIGNFILE}" | sed "s:${LOOP_MOUNT}/::")"
+            openssl cms -sign -inkey ${UEFI_KEYS_PATH}/DB.key -signer ${UEFI_KEYS_PATH}/DB.crt -binary -in ${file} --out ${SIGNFILE} -outform DER
+            log_info "SIGNED (dtb.bin): ${FILEPATH}"
+        done
+    fi
+
+    cleanup_mount ${LOOP_DEVICE}
+    log_debug "> Unmounted dtb.bin"
 
     # look for vmlinuz in rootfs mount
     log_info "Searching for vmlinuz files to sign."
