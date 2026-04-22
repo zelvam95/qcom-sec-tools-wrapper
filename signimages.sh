@@ -40,7 +40,7 @@ HW_VER=""
 
 #_color <color code> < text >
 _color() {
-    [[ "${FLAG_COLOR}" -eq "1" ]] && printf '\033[%sm%s\033[0m' "$1" "$2" && return
+    [ "${FLAG_COLOR}" -eq 1 ] && printf '\033[%sm%s\033[0m' "$1" "$2" && return
     printf '%s' "$2"
 }
 
