@@ -832,6 +832,28 @@ do
 done
 log_ok "> Completed image signing"
 
+# Check for rootfs.img and mount it
+if [ -f "${OUT_DIR}/rootfs.img" ]; then
+    log_warn "Rootfs signing requires root. Asking for root permissions (if needed) ..."
+    sudo -v
+    setup_mount ${OUT_DIR}/rootfs.img
+    RESPONSE=$?
+    if [ "${RESPONSE}" -ne 0 ]; then
+        exit 1
+    fi
+
+    log_info "Searching rootfs for files to sign with OEM keys: ${KEYS_PATH}"
+    file_list=$(sudo find ${LOOP_MOUNT} -iname "*.mbn" -o -iname "*.elf")
+    for file in ${file_list}
+    do
+        sign_verify "${file}" 1
+    done
+
+    cleanup_mount ${LOOP_DEVICE}
+    log_debug "> Unmounted rootfs.img"
+    log_ok "> Completed rootfs image signing"
+fi
+
 # Sign efi DTB
 if [ ! -z "${UEFI_KEYS_PATH}" ]; then
     log_info "UEFI: Start signing handing for keys: ${UEFI_KEYS_PATH}"
