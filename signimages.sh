@@ -854,33 +854,39 @@ if [ -f "${OUT_DIR}/rootfs.img" ]; then
     log_ok "> Completed rootfs image signing"
 fi
 
-# Sign efi DTB
+# Handle UEFI signing workflows
 if [ ! -z "${UEFI_KEYS_PATH}" ]; then
-    log_info "UEFI: Start signing handing for keys: ${UEFI_KEYS_PATH}"
-    mkdir -p ./uefi-mnt/
+    log_info "Searching files to sign with UEFI keys: ${UEFI_KEYS_PATH}"
 
     # if missing, copy efi.bin into OUT_DIR for modification
     if [ ! -f ${OUT_DIR}/efi.bin ]; then
-        log_debug "> Copying efi.bin to ${OUT_DIR} for modification."
+        log_debug "UEFI: Copying efi.bin to ${OUT_DIR} for modification"
         cp efi.bin ${OUT_DIR}/efi.bin
     fi
 
-    # modify efi.bin
-    log_debug "> Mounting efi.bin for modification"
-    sudo mount -t vfat -o loop ${OUT_DIR}/efi.bin ./uefi-mnt/
+    setup_mount ${OUT_DIR}/efi.bin
     RESPONSE=$?
     if [ "${RESPONSE}" -ne 0 ]; then
         exit 1
     fi
-    log_info "UEFI: efi.bin: Signing EFI/BOOT/bootaa64.efi"
-    sudo sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ./uefi-mnt/EFI/BOOT/bootaa64.efi --output ./uefi-mnt/EFI/BOOT/bootaa64.efi
-    sync
-    log_info "UEFI: Searching for vmlinuz files to sign."
-    file_list=$(find  ./uefi-mnt/ -iname "*vmlinuz*")
+
+    # TODO check if efi.bin was mounted ro and warn
+
+    file_list=$(find ${LOOP_MOUNT} -iname "*vmlinuz*" -o -iname "*.efi")
     for file in ${file_list}
     do
-        log_debug "> Signing ${file} with DB key/cert.."
-        OUTPUT=$(sudo sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ${file} --output ${file} 2>&1)
+        FILEPATH="$(echo "${file}" | sed "s:${LOOP_MOUNT}/::")"
+
+        # remove existing signatures
+        while true; do
+            sbattach --remove ${file} > /dev/null 2>&1
+            if [ "$?" -ne 0 ]; then
+                break
+            fi
+            log_debug "UEFI: Removed old signature from ${FILEPATH}"
+        done
+
+        OUTPUT=$(sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ${file} --output ${file} 2>&1)
         RESPONSE=$?
         if [ "${RESPONSE}" -ne 0 ] || [ ! -z "${VERBOSE}" ]; then
             echo -e "${OUTPUT}"
@@ -888,7 +894,8 @@ if [ ! -z "${UEFI_KEYS_PATH}" ]; then
         if [ "${RESPONSE}" -ne 0 ]; then
             log_error "UEFI: Failed to sign ${FILEPATH}"
             if [ "${FLAG_CONTINUE}" -eq 0 ]; then
-                sudo umount ./uefi-mnt
+                udisksctl unmount --no-user-interaction -b ${LOOP_DEVICE} > /dev/null
+                udisksctl loop-delete --no-user-interaction -b ${LOOP_DEVICE} > /dev/null
                 exit 1
             else
                 RETURN_CODE=1
@@ -898,10 +905,8 @@ if [ ! -z "${UEFI_KEYS_PATH}" ]; then
         fi
     done
 
-    sync
-    log_debug "> Unmount efi.bin"
-    sudo umount ./uefi-mnt
-    sync
+    cleanup_mount ${LOOP_DEVICE}
+    log_debug "> Unmounted efi.bin"
 
     # if missing, copy dtb.bin into OUT_DIR for signing
     if [ ! -f ${OUT_DIR}/dtb.bin ]; then
