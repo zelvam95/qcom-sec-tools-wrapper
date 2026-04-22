@@ -944,12 +944,11 @@ if [ ! -z "${UEFI_KEYS_PATH}" ]; then
     log_debug "> Unmounted dtb.bin"
 
     # look for vmlinuz in rootfs mount
-    log_info "Searching for vmlinuz files to sign."
+    log_debug "UEFI: Searching for vmlinuz files to sign with DB key/cert."
     file_list=$(find ${OUT_DIR} -iname "*vmlinuz*")
     for file in ${file_list}
     do
-        log_debug "> Signing ${file} with DB key/cert.."
-        OUTPUT=$(sudo sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ${file} --output ${file})
+        OUTPUT=$(sbsign --key ${UEFI_KEYS_PATH}/DB.key --cert ${UEFI_KEYS_PATH}/DB.crt ${file} --output ${file})
         RESPONSE=$?
         if [ "${RESPONSE}" -ne 0 ] || [ ! -z "${VERBOSE}" ]; then
             echo -e "${OUTPUT}"
@@ -962,6 +961,7 @@ if [ ! -z "${UEFI_KEYS_PATH}" ]; then
                 fi
             fi
         fi
+        log_info "UEFI: Signed ${file} with DB key/cert."
     done
 
     log_ok "> Completed UEFI handling"
