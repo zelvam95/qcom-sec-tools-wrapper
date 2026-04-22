@@ -1,7 +1,22 @@
 #!/bin/sh
 
-# Break on errors
-set -e
+# Define the handler function
+cleanup() {
+    echo -e "\nInterrupt received! Cleaning up..."
+
+    # cleanup mounts
+    if [ ! -z "${LOOP_DEVICE}" ]; then
+        sync
+        udisksctl unmount --no-user-interaction -b ${LOOP_DEVICE} > /dev/null
+        udisksctl loop-delete --no-user-interaction -b ${LOOP_DEVICE} > /dev/null
+        sync
+    fi
+
+    exit 1
+}
+
+# register handler ctrl-c
+trap cleanup SIGINT
 
 # Settings
 VERSION="0.1"
@@ -46,6 +61,7 @@ RETURN_CODE=0
 FLAG_CONTINUE=0
 FLAG_COLOR=0
 LOG_LEVEL=${LOG_INFO}
+LOOP_DEVICE=""
 
 # <level> <text>
 log()
@@ -461,6 +477,52 @@ sign_verify()
     log_ok "SIGNED: $1"
 }
 
+# <filepath>
+# sets LOOP_DEVICE and LOOP_MOUNT
+setup_mount()
+{
+    # setup loop device
+    OUTPUT=$(udisksctl loop-setup --no-user-interaction -f $1)
+    RESPONSE=$?
+    if [ "${RESPONSE}" -ne 0 ] || [ ! -z "${VERBOSE}" ]; then
+        echo -e "${OUTPUT}"
+        if [ "${RESPONSE}" -ne 0 ]; then
+            log_error "setup_mount: Failed to assign $1 to a loop device"
+            return 1
+        fi
+    fi
+    LOOP_DEVICE=$(echo "${OUTPUT}" | grep -o '/dev/loop[0-9]*')
+    log_debug "setup_mount: $1 loop device is ${LOOP_DEVICE}"
+
+    # mount loop device
+    OUTPUT=$(udisksctl mount --no-user-interaction -b ${LOOP_DEVICE} -o rw)
+    RESPONSE=$?
+    if [ "${RESPONSE}" -ne 0 ] || [ ! -z "${VERBOSE}" ]; then
+        echo -e "${OUTPUT}"
+        if [ "${RESPONSE}" -ne 0 ]; then
+            log_error "setup_mount: Failed to mount $1"
+            udisksctl loop-delete --no-user-interaction -b ${LOOP_DEVICE} > /dev/null
+            LOOP_DEVICE=""
+            return 1
+        fi
+    fi
+    LOOP_MOUNT=$(echo "${OUTPUT}" | sed 's/.* at //')
+    log_debug "setup_mount: $1 mounted at ${LOOP_MOUNT}"
+
+    return 0
+}
+
+# <loop device>
+cleanup_mount()
+{
+    sync
+    udisksctl unmount --no-user-interaction -b $1 > /dev/null
+    udisksctl loop-delete --no-user-interaction -b $1 > /dev/null
+    sync
+    LOOP_MOUNT=""
+    LOOP_DEVICE=""
+}
+
 command -v dtc >/dev/null 2>&1 || { log_error "Missing dtc command.  Aborting."; exit 1; }
 log_debug "dtc (device-tree compiler) found."
 
@@ -476,6 +538,8 @@ log_debug "python3 version == ${PYTHON_VERSION}"
 ## pip3 install --user pyelftools OR sudo apt install python3-pyelftools
 
 if [ ! -z "${UEFI_KEYS_PATH}" ]; then
+    command -v udisksctl >/dev/null 2>&1 || { log_error "Missing udisksctl command needed to mount UEFI artifacts (sudo apt install udisks2).  Aborting."; exit 1; }
+    log_debug "udisksctl command found."
     command -v sbsign >/dev/null 2>&1 || { log_error "Missing sbsign command needed for UEFI signing.  Aborting."; exit 1; }
     log_debug "sbsign command found."
 fi
