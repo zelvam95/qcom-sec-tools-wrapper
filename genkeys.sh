@@ -238,7 +238,7 @@ do
     if [ "${USE_ECDSA}" -eq 1 ]; then
 
         # Generate ECDSA root key and certificate (SHA384)
-        # https://docs.qualcomm.com/bundle/publicresource/topics/80-70015-11/generate-ecdsa-root-key-and-certificate.html
+        # QLI 1.8: https://docs.qualcomm.com/doc/80-70029-11/topic/generate-keys-and-certificates.html?product=895724676033554725&facet=Security&version=1.8#option-1-generate-ecdsa-root-key-and-certificate
 
         log "Generate the ECDSA root ${key} key and certificate"
 
@@ -269,7 +269,7 @@ do
 
     else
         # Generate RSA CA key pair and certificate (SHA256)
-        # https://docs.qualcomm.com/bundle/publicresource/topics/80-70015-11/generate-rsa-root-ca-key-pair-and-certificate.html
+        # QLI 1.8: https://docs.qualcomm.com/doc/80-70029-11/topic/generate-keys-and-certificates.html?product=895724676033554725&facet=Security&version=1.8#option-2-generate-rsa-key-pair-and-certificate
 
         log "Generate the root CA ${key} key and certificate"
 
@@ -315,7 +315,7 @@ do
 done
 
 # Generate SHA256 hash for RSA and SHA384 for ECDSA
-# https://docs.qualcomm.com/bundle/publicresource/topics/80-70015-11/generate-sha-384-hash-for-rsa-and-ecdsa.html
+# QLI 1.8: https://docs.qualcomm.com/doc/80-70029-11/topic/generate-keys-and-certificates.html?product=895724676033554725&facet=Security&version=1.8
 
 log "Generate SHA${SHA_HASH_SIZE} hash for signing"
 key=0
