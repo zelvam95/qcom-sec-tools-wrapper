@@ -296,8 +296,13 @@ version_greater_equal()
     printf '%s\n%s\n' "$2" "$1" | sort --check=quiet --version-sort
 }
 
+# <signfile> <sudo flag>
 sign_verify()
 {
+    SUDO_FLAG=""
+    if [ "$2" -eq 1 ]; then
+        SUDO_FLAG="sudo "
+    fi
     log_debug "Found $1"
 
     file="$(basename $1)"
@@ -389,8 +394,8 @@ sign_verify()
     if [ "${PIL_SPLIT_FLAG}" -eq 1 ]; then
         if [ -f "${filedir}/${file%.*}.mdt" ]; then
             log_debug "> Found PIL-SPLIT flag for $1.  Cleaning up fragments."
-            rm ${filedir}/${file%.*}.mdt
-            rm ${filedir}/${file%.*}.b* && true
+            ${SUDO_FLAG} rm ${filedir}/${file%.*}.mdt
+            ${SUDO_FLAG} rm ${filedir}/${file%.*}.b* && true
         else
             log_debug "> Disabling PIL-SPLIT for $1.  No fragments found.."
             PIL_SPLIT_FLAG=0
@@ -398,7 +403,7 @@ sign_verify()
     fi
 
     log_debug "Signing $1"
-    OUTPUT=$(${SECTOOL} secure-image ${VERBOSE} \
+    OUTPUT=$(${SUDO_FLAG} ${SECTOOL} secure-image ${VERBOSE} \
         --sign $1 --image-id=${IMAGE_ID} \
         --security-profile ${SECURITY_PROFILE} \
         --anti-rollback-version=${ANTI_ROLLBACK_VERSION} \
@@ -422,7 +427,7 @@ sign_verify()
     fi
 
     if [ "${PIL_SPLIT_FLAG}" -eq 1 ]; then
-        OUTPUT=$(${SCRIPT_PATH}/bin/pil-splitter $1 ${filedir}/${file%.*}.mdt)
+        OUTPUT=$(${SUDO_FLAG} ${SCRIPT_PATH}/bin/pil-splitter $1 ${filedir}/${file%.*}.mdt)
         RESPONSE=$?
         if [ "${RESPONSE}" -ne 0 ] || [ ! -z "${VERBOSE}" ]; then
             echo -e "${OUTPUT}"
