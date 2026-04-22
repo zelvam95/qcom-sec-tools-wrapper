@@ -133,7 +133,7 @@ parse_args()
             echo "--quiet: disable normal logging"
             echo "--root-cert-subject: subject data for root cert(s)"
             echo "  Make sure to use quotes and place ### where the key # should go."
-            echo "--root-cert-totalnum: set # of root certs to use. 1-4 allowed (default: 4)"
+            echo "--root-cert-totalnum: set # of root certs to use. 1-4 allowed (default: ${ROOT_CERT_TOTALNUM})"
             echo "--rsa-key-size: set RSA key size to 2048 or 4096"
             echo "--use-rsa: Use RSA instead of ECDSA for generating keys (default: use ECDSA)"
             exit 0
@@ -226,7 +226,7 @@ fi
 
 # Generate a randfile
 
-log "Generating ECDSA randfile"
+log "Generating randfile"
 dd if=/dev/urandom of=randfile bs=256 count=1 > /dev/null 2>&1
 log "> Generated."
 
