@@ -24,7 +24,7 @@ FMP_KEY_PASSWORD=""
 DEBUG=0
 FORCE=0
 QUIET=0
-USE_ECSDA=1
+USE_ECDSA=1
 
 parse_args()
 {
@@ -114,7 +114,7 @@ parse_args()
             shift
             ;;
         --use-rsa)
-            USE_ECSDA=0
+            USE_ECDSA=0
             echo "FLAG: Use RSA: enabled"
             shift
             ;;
@@ -233,7 +233,7 @@ key=0
 # Loop through ROOT_CERT_TOTALNUM
 while [ "${key}" -lt ${ROOT_CERT_TOTALNUM} ]
 do
-    if [ "${USE_ECSDA}" -eq 1 ]; then
+    if [ "${USE_ECDSA}" -eq 1 ]; then
 
         # Generate ECDSA root key and certificate
         # https://docs.qualcomm.com/bundle/publicresource/topics/80-70015-11/generate-ecdsa-root-key-and-certificate.html
