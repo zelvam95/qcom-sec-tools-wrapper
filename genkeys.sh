@@ -19,6 +19,7 @@ FMP_CA_CERT_SUBJECT="/CN=OEM Intermediate CA/O=FMP/OU=OEM Key/L=San Diego/ST=Cal
 FMP_USER_CERT_SUBJECT="/CN=OEM User/O=FMP/OU=OEM Key/L=San Diego/ST=California/C=US"
 FMP_KEY_SIZE=2048
 FMP_KEY_PASSWORD=""
+SHA_HASH_SIZE="384"
 
 # Flags
 DEBUG=0
@@ -115,6 +116,7 @@ parse_args()
             ;;
         --use-rsa)
             USE_ECDSA=0
+            SHA_HASH_SIZE="256"
             echo "FLAG: Use RSA: enabled"
             shift
             ;;
@@ -235,7 +237,7 @@ while [ "${key}" -lt ${ROOT_CERT_TOTALNUM} ]
 do
     if [ "${USE_ECDSA}" -eq 1 ]; then
 
-        # Generate ECDSA root key and certificate
+        # Generate ECDSA root key and certificate (SHA384)
         # https://docs.qualcomm.com/bundle/publicresource/topics/80-70015-11/generate-ecdsa-root-key-and-certificate.html
 
         log "Generate the ECDSA root ${key} key and certificate"
@@ -243,7 +245,7 @@ do
         openssl ecparam -genkey -name secp384r1 -outform PEM -out ${OUT_DIR}/qpsa_rootca${key}.key
         log "> Created ECDSA root ${key} key"
 
-        openssl req -new -key ${OUT_DIR}/qpsa_rootca${key}.key -sha384 -out ${OUT_DIR}/rootca${key}_pem.crt \
+        openssl req -new -key ${OUT_DIR}/qpsa_rootca${key}.key -sha${SHA_HASH_SIZE} -out ${OUT_DIR}/rootca${key}_pem.crt \
             -subj "$(echo "${ROOT_CERT_SUBJECT}" | sed "s/###/${key}/g")" \
             -config ${SCRIPT_DIR}/opensslroot.cfg -x509 -days 7300 -set_serial 1
 
@@ -257,16 +259,16 @@ do
 
         openssl req -new -key ${OUT_DIR}/qpsa_attestca${key}.key -out ${OUT_DIR}/ca${key}.csr \
             -subj "$(echo "${CA_CERT_SUBJECT}" | sed "s/###/${key}/g")" \
-            -config ${SCRIPT_DIR}/opensslroot.cfg -sha384
+            -config ${SCRIPT_DIR}/opensslroot.cfg -sha${SHA_HASH_SIZE}
 
         openssl x509 -req -in ${OUT_DIR}/ca${key}.csr -CA ${OUT_DIR}/rootca${key}_pem.crt -CAkey ${OUT_DIR}/qpsa_rootca${key}.key \
-            -out ${OUT_DIR}/attestca${key}_pem.crt -set_serial 1 -days 7300 -extfile ${SCRIPT_DIR}/v3.ext -sha384 -CAcreateserial
+            -out ${OUT_DIR}/attestca${key}_pem.crt -set_serial 1 -days 7300 -extfile ${SCRIPT_DIR}/v3.ext -sha${SHA_HASH_SIZE} -CAcreateserial
 
         openssl x509 -inform PEM -in ${OUT_DIR}/attestca${key}_pem.crt -outform DER -out ${OUT_DIR}/qpsa_attestca${key}.cer
         log "> Created EC Attestation CA ${key} certificate"
 
     else
-        # Generate RSA CA key pair and certificate
+        # Generate RSA CA key pair and certificate (SHA256)
         # https://docs.qualcomm.com/bundle/publicresource/topics/80-70015-11/generate-rsa-root-ca-key-pair-and-certificate.html
 
         log "Generate the root CA ${key} key and certificate"
@@ -275,14 +277,11 @@ do
         log "> Created RSA root CA ${key} key"
 
         if [ "${USE_OPENSSL1}" -eq 1 ]; then
-            # Updated -sha256 to -sha384
-            openssl req -new -sha384 -key ${OUT_DIR}/qpsa_rootca${key}.key -x509 -out ${OUT_DIR}/rootca_pem${key}.crt \
+            openssl req -new -sha${SHA_HASH_SIZE} -key ${OUT_DIR}/qpsa_rootca${key}.key -x509 -out ${OUT_DIR}/rootca_pem${key}.crt \
                 -subj "$(echo "${ROOT_CERT_SUBJECT}" | sed "s/###/${key}/g")" \
-                -days 7300 -set_serial 1 -config ${SCRIPT_DIR}/opensslroot.cfg -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha384
+                -days 7300 -set_serial 1 -config ${SCRIPT_DIR}/opensslroot.cfg -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha${SHA_HASH_SIZE}
         else
-            # Dropped "-sigopt digest:sha256" from the original command
-            # Updated -sha256 to -sha384
-            openssl req -new -sha384 -key ${OUT_DIR}/qpsa_rootca${key}.key -x509 -out ${OUT_DIR}/rootca_pem${key}.crt \
+            openssl req -new -sha${SHA_HASH_SIZE} -key ${OUT_DIR}/qpsa_rootca${key}.key -x509 -out ${OUT_DIR}/rootca_pem${key}.crt \
                 -subj "$(echo "${ROOT_CERT_SUBJECT}" | sed "s/###/${key}/g")" \
                 -days 7300 -set_serial 1 -config ${SCRIPT_DIR}/opensslroot.cfg -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1
         fi
@@ -295,21 +294,16 @@ do
         openssl genrsa -out ${OUT_DIR}/qpsa_attestca${key}.key ${RSA_KEY_SIZE}
         log "> Created RSA Attestation CA ${key} key"
 
-        # Dropped "-days 7300" from original command
-        # Added -sha384
         openssl req -new -key ${OUT_DIR}/qpsa_attestca${key}.key -out ${OUT_DIR}/attestca${key}.csr \
             -subj "$(echo "${CA_CERT_SUBJECT}" | sed "s/###/${key}/g")" \
-            -config ${SCRIPT_DIR}/opensslroot.cfg -sha384
+            -config ${SCRIPT_DIR}/opensslroot.cfg -sha${SHA_HASH_SIZE}
 
         if [ "${USE_OPENSSL1}" -eq 1 ]; then
-            # Updated -sha256 to -sha384
             openssl x509 -req -in ${OUT_DIR}/attestca${key}.csr -CA ${OUT_DIR}/rootca_pem${key}.crt -CAkey ${OUT_DIR}/qpsa_rootca${key}.key \
-                -out ${OUT_DIR}/attestca${key}_pem.crt -sha384 -set_serial 5 -days 7300 -extfile ${SCRIPT_DIR}/v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha256
+                -out ${OUT_DIR}/attestca${key}_pem.crt -sha${SHA_HASH_SIZE} -set_serial 5 -days 7300 -extfile ${SCRIPT_DIR}/v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1 -sigopt digest:sha${SHA_HASH_SIZE}
         else
-            # Dropped: "- sigopt digest:sha256" from original command
-            # Updated -sha256 to -sha384
             openssl x509 -req -in ${OUT_DIR}/attestca${key}.csr -CA ${OUT_DIR}/rootca_pem${key}.crt -CAkey ${OUT_DIR}/qpsa_rootca${key}.key \
-                -out ${OUT_DIR}/attestca${key}_pem.crt -sha384 -set_serial 5 -days 7300 -extfile ${SCRIPT_DIR}/v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1
+                -out ${OUT_DIR}/attestca${key}_pem.crt -sha${SHA_HASH_SIZE} -set_serial 5 -days 7300 -extfile ${SCRIPT_DIR}/v3.ext -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:-1
         fi
 
         openssl x509 -inform PEM -in ${OUT_DIR}/attestca${key}_pem.crt -outform DER -out ${OUT_DIR}/qpsa_attestca${key}.cer
@@ -320,10 +314,10 @@ do
     key=$((key + 1))
 done
 
-# Generate SHA-384 hash for RSA and ECDSA
+# Generate SHA256 hash for RSA and SHA384 for ECDSA
 # https://docs.qualcomm.com/bundle/publicresource/topics/80-70015-11/generate-sha-384-hash-for-rsa-and-ecdsa.html
 
-log "Generate SHA384 hash for signing"
+log "Generate SHA${SHA_HASH_SIZE} hash for signing"
 key=0
 rm -rf ${OUT_DIR}/qpsa_roots.bin
 # Loop through ROOT_CERT_TOTALNUM
@@ -335,7 +329,7 @@ do
     # increment key counter
     key=$((key + 1))
 done
-openssl dgst -sha384 ${OUT_DIR}/qpsa_roots.bin >${OUT_DIR}/sha384_roots_hash.txt
+openssl dgst -sha${SHA_HASH_SIZE} ${OUT_DIR}/qpsa_roots.bin >${OUT_DIR}/sha${SHA_HASH_SIZE}_roots_hash.txt
 log "> Created"
 
 # Generate FMP (Firmware Management Protocol keys)
