@@ -749,14 +749,24 @@ if [ -f "${OUT_DIR}/${XBL_CONFIG_FILENAME}" ] && [ -f "${FMP_PATH}/${FMP_ROOT_CE
         do
             log_debug "> Checking ${file} for DTB values"
             if [ "$(hexdump -n 4 -e '4/1 "%02x"' ${file})" = "d00dfeed" ]; then
-                found_dtb=1
-                log_debug "> Setting QcCapsuleRootCert in ${file}"
-                # generate a dts from the post-DDR dtb
-                dtc -I dtb -O dts ${file} > ${file}.dts
-                sed "/QcCapsuleRootCert/ { s/<[^>]*>/<$(cat ./tmp-fmp-root-cert-hex.inc)>/g }" ${file}.dts > ${file}.new.dts
-                # generate a 2-byte aligned dtb from the modified post-DDR dts
-                dtc -a 2 -I dts -O dtb ${file}.new.dts > ${file}.new
-                rm ${file}*dts
+                log_debug "> python3 ${SCRIPT_PATH}/cbsp-boot-utilities/uefi_capsule_generation/set_dtb_property.py ${file} /sw/uefi/uefiplat QcCapsuleRootCert @list:./tmp-fmp-root-cert-hex.inc ${file}.new"
+                OUTPUT=$(python3 ${SCRIPT_PATH}/cbsp-boot-utilities/uefi_capsule_generation/set_dtb_property.py \
+                    ${file} /sw/uefi/uefiplat QcCapsuleRootCert @list:./tmp-fmp-root-cert-hex.inc ${file}.new)
+                RESPONSE=$?
+                if [ "${RESPONSE}" -ne 0 ]; then
+                    echo -e "${OUTPUT}"
+                    log_error "set_dtb_property failed for ${OUT_DIR}/${XBL_CONFIG_FILENAME}."
+                    if [ "${FLAG_CONTINUE}" -eq 0 ]; then
+                        rm -rf ${OUT_DIR}/xbl_config-temp
+                        exit 1
+                    else
+                        RETURN_CODE=1
+                    fi
+                else
+                    # save the segment # for passing into xblconfig_parser
+                    found_dtb=$(basename -s .bin "${file}" | sed 's/.*_//')
+                    break
+                fi
             fi
         done
     fi
@@ -765,11 +775,11 @@ if [ -f "${OUT_DIR}/${XBL_CONFIG_FILENAME}" ] && [ -f "${FMP_PATH}/${FMP_ROOT_CE
     rm ./tmp-fmp-root-cert-hex.inc
 
     # if changed recombine
-    if [ "${found_dtb}" -eq "1" ]; then
-        log_debug "> Combining segments back into ${XBL_CONFIG_FILENAME}."
-        log_debug "> python3 ${SCRIPT_PATH}/cbsp-boot-utilities/uefi_capsule_generation/dump_dtb_xblconfig.py ${OUT_DIR}/${XBL_CONFIG_FILENAME} --replace-dtb 8 ${file}.new ${OUT_DIR}/${XBL_CONFIG_FILENAME}.patched"
-        OUTPUT=$(python3 ${SCRIPT_PATH}/cbsp-boot-utilities/uefi_capsule_generation/dump_dtb_xblconfig.py ${OUT_DIR}/${XBL_CONFIG_FILENAME} --replace-dtb 8 \
-            ${file}.new ${OUT_DIR}/${XBL_CONFIG_FILENAME}.patched)
+    if [ "${found_dtb}" -gt 0 ]; then
+        log_debug "> Add patched segment back into ${XBL_CONFIG_FILENAME} and recalculate hash."
+        log_debug "> python3 ${SCRIPT_PATH}/cbsp-boot-utilities/uefi_capsule_generation/xblconfig_parser.py ${OUT_DIR}/${XBL_CONFIG_FILENAME} replace ${ph_num} ${file}.new ${OUT_DIR}/${XBL_CONFIG_FILENAME}.patched"
+        OUTPUT=$(python3 ${SCRIPT_PATH}/cbsp-boot-utilities/uefi_capsule_generation/xblconfig_parser.py ${OUT_DIR}/${XBL_CONFIG_FILENAME} replace \
+            ${found_dtb} ${file}.new ${OUT_DIR}/${XBL_CONFIG_FILENAME}.patched)
         RESPONSE=$?
         if [ "${RESPONSE}" -ne 0 ]; then
             echo -e "${OUTPUT}"
