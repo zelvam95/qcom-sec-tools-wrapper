@@ -307,6 +307,8 @@ do
         fi
 
         openssl x509 -inform PEM -in ${OUT_DIR}/attestca${key}_pem.crt -outform DER -out ${OUT_DIR}/qpsa_attestca${key}.cer
+
+        rm ${OUT_DIR}/*.crt && true
         log "> Created RSA Attestation CA ${key} certificate"
     fi
 
@@ -330,6 +332,7 @@ do
     key=$((key + 1))
 done
 openssl dgst -sha${SHA_HASH_SIZE} ${OUT_DIR}/qpsa_roots.bin >${OUT_DIR}/sha${SHA_HASH_SIZE}_roots_hash.txt
+rm ${OUT_DIR}/${OUT_DIR}/qpsa_roots.bin && true
 log "> Created"
 
 # Generate FMP (Firmware Management Protocol keys)
