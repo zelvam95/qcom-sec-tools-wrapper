@@ -6,8 +6,8 @@ set -e
 # Settings
 SCRIPT_DIR="$(dirname "$(realpath -- "$0")")"
 OUT_DIR="OEM-KEYS"
-KEY_SIZE=2048
-VALID_KEY_SIZES="2048 4096"
+RSA_KEY_SIZE=2048
+RSA_VALID_KEY_SIZES="2048 4096"
 MIN_OPENSSL_VER="1.1.1"
 USE_OPENSSL1=0
 ROOT_CERT_TOTALNUM=1
@@ -71,23 +71,6 @@ parse_args()
             echo "FLAG: Force overwrite: enabled"
             shift
             ;;
-        --key-size)
-            found=0
-            for value in ${VALID_KEY_SIZES}; do
-                if [ "$2" = "${value}" ]; then
-                    KEY_SIZE=$2
-                    echo "FLAG: KEY_SIZE=${KEY_SIZE}"
-                    found=1
-                    break
-                fi
-            done
-            if [ "${found}" -eq 0 ]; then
-                echo "Invalid key size: $2.  Valid values: 2048 or 4096.  Aborting."
-                exit 1
-            fi
-            shift
-            shift
-            ;;
         --quiet)
             QUIET=1
             echo "FLAG: Quiet mode"
@@ -113,6 +96,23 @@ parse_args()
             shift
             shift
             ;;
+        --rsa-key-size)
+            found=0
+            for value in ${RSA_VALID_KEY_SIZES}; do
+                if [ "$2" = "${value}" ]; then
+                    RSA_KEY_SIZE=$2
+                    echo "FLAG: RSA_KEY_SIZE=${RSA_KEY_SIZE}"
+                    found=1
+                    break
+                fi
+            done
+            if [ "${found}" -eq 0 ]; then
+                echo "Invalid key size: $2.  Valid values: 2048 or 4096.  Aborting."
+                exit 1
+            fi
+            shift
+            shift
+            ;;
         --use-rsa)
             USE_ECSDA=0
             echo "FLAG: Use RSA: enabled"
@@ -128,11 +128,11 @@ parse_args()
             echo "--fmp-root-cert-subject: subject data for FMP root cert"
             echo "--fmp-user-cert-subject: subject data for FMP user cert"
             echo "--force: force overwrite files (dangerous!)"
-            echo "--key-size: set RSA key size to 2048 or 4096"
             echo "--quiet: disable normal logging"
             echo "--root-cert-subject: subject data for root cert(s)"
             echo "  Make sure to use quotes and place ### where the key # should go."
             echo "--root-cert-totalnum: set # of root certs to use. 1-4 allowed (default: 4)"
+            echo "--rsa-key-size: set RSA key size to 2048 or 4096"
             echo "--use-rsa: Use RSA instead of ECDSA for generating keys (default: use ECDSA)"
             exit 0
             ;;
@@ -271,7 +271,7 @@ do
 
         log "Generate the root CA ${key} key and certificate"
 
-        openssl genrsa -out ${OUT_DIR}/qpsa_rootca${key}.key ${KEY_SIZE}
+        openssl genrsa -out ${OUT_DIR}/qpsa_rootca${key}.key ${RSA_KEY_SIZE}
         log "> Created RSA root CA ${key} key"
 
         if [ "${USE_OPENSSL1}" -eq 1 ]; then
@@ -292,7 +292,7 @@ do
 
         log "Generate the attestation CA ${key} key and certificate"
 
-        openssl genrsa -out ${OUT_DIR}/qpsa_attestca${key}.key ${KEY_SIZE}
+        openssl genrsa -out ${OUT_DIR}/qpsa_attestca${key}.key ${RSA_KEY_SIZE}
         log "> Created RSA Attestation CA ${key} key"
 
         # Dropped "-days 7300" from original command
