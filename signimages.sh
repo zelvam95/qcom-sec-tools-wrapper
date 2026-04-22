@@ -755,20 +755,12 @@ do
     fi
 done
 
-log_info "Searching for MBN files to sign."
-file_list=$(find ${OUT_DIR} -iname "*.mbn")
-for file in ${file_list}
-do
-    sign_verify "${file}"
-done
-
-log_info "Searching for ELF files to sign."
-file_list=$(find ${OUT_DIR} -iname "*.elf")
+log_info "Searching for boot files to sign with OEM keys: ${KEYS_PATH}"
+file_list=$(find ${OUT_DIR} -iname "*.mbn" -o -iname "*.elf")
 for file in ${file_list}
 do
     sign_verify "${file}" 0
 done
-
 log_ok "> Completed image signing"
 
 # Sign efi DTB
