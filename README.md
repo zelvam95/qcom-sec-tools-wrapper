@@ -25,9 +25,9 @@ $ mkdir qcom-secure && cd qcom-secure
 $ export WORKDIR=${PWD}
 
 # sectools
-$ wget https://softwarecenter.qualcomm.com/api/download/software/tools/Qualcomm_Security_Tools/All/1.45.0/1.45.zip
-$ unzip 1.45.zip -d sectoolsv2_1.45
-$ chmod +x sectoolsv2_1.45/Linux/sectools
+$ wget https://softwarecenter.qualcomm.com/api/download/software/tools/Qualcomm_Security_Tools/All/1.50.0/1.50.zip
+$ unzip 1.50.zip -d sectools-public
+$ chmod +x sectools-public/1.50/Linux/sectools
 
 # qcom-sec-tools-wrapper
 $ git clone --recurse-submodules git@github.com:qualcomm-linux/qcom-sec-tools-wrapper.git
@@ -41,7 +41,7 @@ Hardware Security Profile* - tbd
 * Set the environment:
 
 ```bash
-$ export SECTOOL=${WORKDIR}/sectoolsv2_1.45/Linux/sectools
+$ export SECTOOL=${WORKDIR}/sectools-public/1.50/Linux/sectools
 $ export SECTOOL_SCRIPTS=${WORKDIR}/qcom-sec-tools-wrapper
 $ export SEC_PROFILE=${WORKDIR}/<hardware>_security_profile.xml
 ```
